@@ -3,23 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hong's Korean Vocab ✿</title>
+  <title>Hong's Korean Vocab 🐟</title>
   <style>
     :root {
-      --bg:           #fdf6f0;
+      /* Hangyodon palette — teal body + cobalt bow + coral bowtie */
+      --bg:           #eef8f7;   /* lightest teal wash   */
       --surface:      #ffffff;
-      --sidebar-bg:   #fff8fb;
-      --border:       #f0dce8;
-      --border-light: #f7edf3;
+      --sidebar-bg:   #e6f4f3;
+      --border:       #afd8d6;
+      --border-light: #caeae8;
 
-      --pink:         #ff85a1;
-      --pink-dark:    #d9617e;
-      --pink-soft:    #ffd6e7;
-      --pink-pale:    #fff0f5;
+      --pink:         #55b3ae;   /* Hangyodon teal body  */
+      --pink-dark:    #338e89;   /* deep teal            */
+      --pink-soft:    #9dd5d2;   /* soft teal            */
+      --pink-pale:    #dff4f3;   /* palest teal          */
 
-      --lavender:     #a78bfa;
-      --lavender-pale:#f3f0ff;
-      --lavender-border: #ddd6fe;
+      --lavender:     #4e72c4;   /* cobalt bow blue      */
+      --lavender-pale:#e8edf9;
+      --lavender-border: #a4b6e8;
+
+      --coral:        #d97b6a;   /* bowtie coral — used for badges */
 
       --mint:         #10b981;
       --mint-pale:    #ecfdf5;
@@ -29,13 +32,13 @@
       --yellow-pale:  #fefce8;
       --yellow-border:#fde68a;
 
-      --red:          #f43f5e;
+      --red:          #e8405a;
       --red-pale:     #fff1f2;
       --red-border:   #fecdd3;
 
-      --text:         #2d1f3d;
-      --text-mid:     #6b5f7a;
-      --text-light:   #c4aecf;
+      --text:         #122e2c;   /* dark teal-navy — easy to read */
+      --text-mid:     #2e5a57;   /* readable mid tone   */
+      --text-light:   #5a9490;   /* muted teal           */
 
       --r:  16px;
       --rs: 10px;
@@ -95,7 +98,7 @@
       white-space: nowrap;
       line-height: 1;
     }
-    .btn:hover { background: var(--pink-pale); border-color: var(--pink-soft); color: var(--pink); }
+    .btn:hover { background: var(--pink-pale); border-color: var(--pink-soft); color: var(--pink-dark); }
     .btn-primary { background: var(--pink); color: #fff; border-color: var(--pink); }
     .btn-primary:hover { background: var(--pink-dark); border-color: var(--pink-dark); color: #fff; }
     input[type="file"] { display: none; }
@@ -171,6 +174,7 @@
       color: var(--lavender);
       border: 1px solid var(--lavender-border);
       white-space: nowrap;
+
     }
 
     /* card list within session */
@@ -206,15 +210,54 @@
     .card-list-item:hover { background: var(--pink-pale); }
     .card-list-item.current { background: var(--pink-soft); font-weight: 600; }
 
+    /* Status dot — now a clickable button */
     .sdot {
-      width: 7px; height: 7px;
+      width: 11px; height: 11px;
       border-radius: 50%;
       flex-shrink: 0;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      display: inline-block;
     }
+    .sdot:hover { transform: scale(1.5); box-shadow: 0 0 0 3px rgba(0,0,0,0.08); }
     .sdot-0 { background: var(--text-light); }
     .sdot-1 { background: var(--red); }
     .sdot-3 { background: var(--yellow); }
     .sdot-5 { background: var(--mint); }
+
+    /* Auto-save bar */
+    .autosave-bar {
+      padding: 6px 14px;
+      font-size: 0.68rem;
+      color: var(--pink-dark);
+      background: var(--pink-pale);
+      border-bottom: 1px solid var(--border-light);
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    /* Rating legend */
+    .rating-legend {
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.67rem;
+      color: var(--text-light);
+      font-weight: 600;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .legend-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-left: 4px;
+    }
+    .legend-dot:first-child { margin-left: 0; }
+    .legend-hint { color: var(--text-light); font-style: italic; margin-left: 2px; }
 
     /* ── MAIN PANEL ───────────────────────── */
     .main-panel {
@@ -275,9 +318,9 @@
       font-weight: 800;
       padding: 2px 8px;
       border-radius: var(--rp);
-      background: #fff7ed;
-      color: #c2410c;
-      border: 1px solid #fed7aa;
+      background: var(--lavender-pale);
+      color: var(--lavender);
+      border: 1px solid var(--lavender-border);
       display: none;
     }
     .sniper-badge.visible { display: inline-block; }
@@ -310,7 +353,7 @@
       justify-content: center;
       padding: 28px 24px;
       text-align: center;
-      box-shadow: 0 12px 40px rgba(200, 100, 150, 0.13);
+      box-shadow: 0 12px 40px rgba(50, 140, 135, 0.13);
       border: 1px solid var(--border);
     }
 
@@ -369,14 +412,14 @@
       border-radius: var(--rp);
     }
     .badge-hanja {
-      background: #eff6ff;
-      color: #1d4ed8;
-      border: 1px solid #bfdbfe;
+      background: var(--lavender-pale);
+      color: var(--lavender);
+      border: 1px solid var(--lavender-border);
     }
     .badge-en {
-      background: var(--lavender-pale);
-      color: #6d28d9;
-      border: 1px solid var(--lavender-border);
+      background: #fdf0ee;
+      color: var(--coral);
+      border: 1px solid #f0c0b8;
     }
 
     .back-sentence {
@@ -574,16 +617,16 @@
 
 <!-- ── HEADER ── -->
 <header class="app-header">
-  <div class="app-title">✿ <span>Hong's</span> Korean Vocab</div>
+  <div class="app-title">🐟 <span>Hong's</span> Korean Vocab</div>
   <div class="header-right">
     <button class="btn" onclick="openPasteModal()">✦ Paste from Gemini</button>
     <label class="btn btn-primary">
       ↑ Upload CSV
       <input type="file" id="csv-upload" accept=".csv">
     </label>
-    <button class="btn" onclick="exportProgress()" title="Export SRS progress">⬇ Progress</button>
-    <label class="btn" title="Import SRS progress">
-      ↑ Restore
+    <button class="btn" onclick="exportProgress()" title="Download your ratings as a backup file (useful when switching devices)">⬇ Backup</button>
+    <label class="btn" title="Restore ratings from a previously downloaded backup file">
+      ↑ Restore Backup
       <input type="file" id="json-upload" accept=".json">
     </label>
   </div>
@@ -595,11 +638,19 @@
   <!-- LEFT SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-label">Sessions</div>
+    <div class="autosave-bar">✓ Progress auto-saved in this browser</div>
     <div class="session-scroll" id="session-list">
       <div style="padding:16px 10px;text-align:center;color:var(--text-light);font-size:0.8rem;">Loading…</div>
     </div>
     <div class="card-list-wrap" id="card-list-wrap" style="display:none;">
       <div class="sidebar-label" id="card-list-label">Cards (0)</div>
+      <div class="rating-legend">
+        <span class="legend-dot" style="background:var(--text-light)"></span>Unseen
+        <span class="legend-dot" style="background:var(--red)"></span>Forgot
+        <span class="legend-dot" style="background:var(--yellow)"></span>Good
+        <span class="legend-dot" style="background:var(--mint)"></span>Mastered
+        <span class="legend-hint">· click dot to set</span>
+      </div>
       <div class="card-list-scroll" id="card-list"></div>
     </div>
   </aside>
@@ -609,7 +660,7 @@
 
     <!-- Empty state -->
     <div class="empty-state" id="empty-state">
-      <div class="empty-emoji">✿</div>
+      <div class="empty-emoji">🐟</div>
       <div class="empty-title">Pick a session to start</div>
       <div class="empty-sub">
         Choose a date from the sidebar,<br>
@@ -659,7 +710,7 @@
       </div>
 
       <!-- Flip hint / SRS -->
-      <div class="flip-hint" id="flip-hint">Click card to reveal ✦</div>
+      <div class="flip-hint" id="flip-hint">Click card to reveal 🐟</div>
 
       <div class="srs-grid" id="srs-grid">
         <button class="srs-btn srs-forgot"  onclick="rateCard(1)">😢 Forgot</button>
@@ -1039,28 +1090,59 @@ function renderCardList() {
   wrap.style.display = 'flex';
   lbl.textContent = `Cards (${cards.length})`;
   list.innerHTML = '';
+  const RATING_LABELS = { 0: 'Unseen', 1: 'Forgot', 3: 'Good', 5: 'Mastered' };
+  const RATING_CYCLE  = { 0: 1, 1: 3, 3: 5, 5: 0 };
+
   cards.forEach((card, ai) => {
     const ri = activeIdxs.indexOf(ai);
     const div = document.createElement('div');
     div.className = 'card-list-item' + (ri === idx && ri !== -1 ? ' current' : '');
+
+    // Clickable dot button — cycles rating manually
     const r = getRating(card.korean);
-    div.innerHTML = `<div class="sdot sdot-${r}"></div><span>${card.korean}</span>`;
+    const dot = document.createElement('button');
+    dot.className = `sdot sdot-${r}`;
+    dot.title = `Now: ${RATING_LABELS[r] || 'Unseen'} — click to change`;
+    dot.onclick = (e) => {
+      e.stopPropagation();
+      const cur  = getRating(card.korean);
+      const next = RATING_CYCLE[cur] ?? 0;
+      if (!srs[card.korean]) srs[card.korean] = { rating: 0, rep: 0, interval: 0, efactor: 2.5, dueDate: 0 };
+      srs[card.korean].rating = next;
+      saveSRS();
+      dot.className = `sdot sdot-${next}`;
+      dot.title = `Now: ${RATING_LABELS[next]} — click to change`;
+      highlightCardList();
+    };
+
+    const label = document.createElement('span');
+    label.textContent = card.korean;
+
+    div.appendChild(dot);
+    div.appendChild(label);
+
+    // Clicking the row (not the dot) navigates to that card
     div.onclick = () => {
       const ri2 = activeIdxs.indexOf(ai);
       if (ri2 !== -1) { idx = ri2; localStorage.setItem(LS.idx, idx); showStudy(); renderCard(); }
     };
+
     list.appendChild(div);
     if (ri === idx) setTimeout(() => div.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
   });
 }
 
 function highlightCardList() {
+  const RATING_LABELS = { 0: 'Unseen', 1: 'Forgot', 3: 'Good', 5: 'Mastered' };
   document.querySelectorAll('.card-list-item').forEach((div, ai) => {
     const ri = activeIdxs.indexOf(ai);
     div.classList.toggle('current', ri === idx && ri !== -1);
     const r = getRating(cards[ai]?.korean || '');
     const dot = div.querySelector('.sdot');
-    if (dot) dot.className = `sdot sdot-${r}`;
+    if (dot) {
+      dot.className = `sdot sdot-${r}`;
+      dot.title = `Now: ${RATING_LABELS[r] || 'Unseen'} — click to change`;
+    }
   });
 }
 
