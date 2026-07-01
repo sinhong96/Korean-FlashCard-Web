@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hong's Korean Vocab ✿</title>
+  <style>
+    :root {
+      --bg:           #fdf6f0;
+      --surface:      #ffffff;
+      --sidebar-bg:   #fff8fb;
+      --border:       #f0dce8;
+      --border-light: #f7edf3;
+
+      --pink:         #ff85a1;
+      --pink-dark:    #d9617e;
+      --pink-soft:    #ffd6e7;
+      --pink-pale:    #fff0f5;
+
+      --lavender:     #a78bfa;
+      --lavender-pale:#f3f0ff;
+      --lavender-border: #ddd6fe;
+
+      --mint:         #10b981;
+      --mint-pale:    #ecfdf5;
+      --mint-border:  #a7f3d0;
+
+      --yellow:       #f59e0b;
+      --yellow-pale:  #fefce8;
+      --yellow-border:#fde68a;
+
+      --red:          #f43f5e;
+      --red-pale:     #fff1f2;
+      --red-border:   #fecdd3;
+
+      --text:         #2d1f3d;
+      --text-mid:     #6b5f7a;
+      --text-light:   #c4aecf;
+
+      --r:  16px;
+      --rs: 10px;
+      --rp: 100px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── HEADER ───────────────────────────── */
+    .app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .app-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--pink);
+      letter-spacing: -0.3px;
+      white-space: nowrap;
+    }
+    .app-title span { color: var(--text); }
+
+    .header-right { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+    /* ── BUTTONS ──────────────────────────── */
+    .btn {
+      padding: 7px 12px;
+      border-radius: var(--rs);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-mid);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .btn:hover { background: var(--pink-pale); border-color: var(--pink-soft); color: var(--pink); }
+    .btn-primary { background: var(--pink); color: #fff; border-color: var(--pink); }
+    .btn-primary:hover { background: var(--pink-dark); border-color: var(--pink-dark); color: #fff; }
+    input[type="file"] { display: none; }
+
+    /* ── LAYOUT ───────────────────────────── */
+    .app-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ──────────────────────────── */
+    .sidebar {
+      width: 240px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .sidebar-label {
+      padding: 11px 14px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      color: var(--text-light);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 1px solid var(--border-light);
+      flex-shrink: 0;
+    }
+
+    .session-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      min-height: 0;
+    }
+
+    .session-item {
+      padding: 9px 10px;
+      border-radius: var(--rs);
+      cursor: pointer;
+      transition: all 0.13s;
+      margin-bottom: 2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .session-item:hover { background: var(--pink-pale); }
+    .session-item.active { background: var(--pink-soft); }
+
+    .session-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text-light);
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .session-item.active .session-dot { background: var(--pink); }
+
+    .session-info { flex: 1; min-width: 0; }
+    .session-date { font-size: 0.83rem; font-weight: 600; color: var(--text); }
+    .session-meta { font-size: 0.7rem; color: var(--text-light); margin-top: 1px; }
+
+    .tag-pill {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: var(--rp);
+      background: var(--lavender-pale);
+      color: var(--lavender);
+      border: 1px solid var(--lavender-border);
+      white-space: nowrap;
+    }
+
+    /* card list within session */
+    .card-list-wrap {
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      max-height: 45%;
+      overflow: hidden;
+    }
+
+    .card-list-scroll {
+      overflow-y: auto;
+      padding: 5px;
+      flex: 1;
+    }
+
+    .card-list-item {
+      padding: 7px 9px;
+      border-radius: 7px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.79rem;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      transition: background 0.12s;
+    }
+    .card-list-item span { overflow: hidden; text-overflow: ellipsis; }
+    .card-list-item:hover { background: var(--pink-pale); }
+    .card-list-item.current { background: var(--pink-soft); font-weight: 600; }
+
+    .sdot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .sdot-0 { background: var(--text-light); }
+    .sdot-1 { background: var(--red); }
+    .sdot-3 { background: var(--yellow); }
+    .sdot-5 { background: var(--mint); }
+
+    /* ── MAIN PANEL ───────────────────────── */
+    .main-panel {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 20px;
+      overflow-y: auto;
+      position: relative;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      color: var(--text-light);
+    }
+    .empty-emoji { font-size: 3rem; margin-bottom: 14px; }
+    .empty-title { font-size: 1.1rem; font-weight: 700; color: var(--text-mid); margin-bottom: 6px; }
+    .empty-sub { font-size: 0.84rem; line-height: 1.5; }
+
+    /* ── STUDY AREA ───────────────────────── */
+    .study-area {
+      width: 100%;
+      max-width: 540px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* Progress */
+    .progress-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .progress-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-mid);
+      white-space: nowrap;
+    }
+    .progress-track {
+      flex: 1;
+      height: 5px;
+      background: var(--border);
+      border-radius: var(--rp);
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--pink), var(--lavender));
+      border-radius: var(--rp);
+      transition: width 0.35s ease;
+    }
+    .sniper-badge {
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: var(--rp);
+      background: #fff7ed;
+      color: #c2410c;
+      border: 1px solid #fed7aa;
+      display: none;
+    }
+    .sniper-badge.visible { display: inline-block; }
+
+    /* Flashcard */
+    .card-scene {
+      perspective: 1200px;
+      width: 100%;
+      height: 270px;
+      cursor: pointer;
+    }
+
+    .card-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      transform-style: preserve-3d;
+      transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .card-inner.flipped { transform: rotateY(180deg); }
+
+    .card-face {
+      position: absolute;
+      inset: 0;
+      backface-visibility: hidden;
+      border-radius: var(--r);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 24px;
+      text-align: center;
+      box-shadow: 0 12px 40px rgba(200, 100, 150, 0.13);
+      border: 1px solid var(--border);
+    }
+
+    .card-front { background: var(--surface); }
+    .card-back {
+      background: var(--pink-pale);
+      border-color: var(--pink-soft);
+      transform: rotateY(180deg);
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-face-label {
+      font-size: 0.66rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--text-light);
+      margin-bottom: 14px;
+    }
+
+    .front-chinese {
+      font-size: 1.35rem;
+      font-weight: 600;
+      line-height: 1.55;
+      color: var(--text);
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .back-top {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .back-korean {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .badge-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .badge {
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: var(--rp);
+    }
+    .badge-hanja {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+    .badge-en {
+      background: var(--lavender-pale);
+      color: #6d28d9;
+      border: 1px solid var(--lavender-border);
+    }
+
+    .back-sentence {
+      width: 100%;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      color: var(--text-mid);
+      background: rgba(255,255,255,0.75);
+      padding: 10px 13px;
+      border-radius: 10px;
+      border: 1px dashed var(--pink-soft);
+      text-align: left;
+    }
+
+    /* TTS button */
+    .tts-btn {
+      position: absolute;
+      top: 13px; right: 13px;
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.85);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      z-index: 2;
+    }
+    .tts-btn:hover { background: var(--pink-pale); border-color: var(--pink-soft); }
+    .tts-btn svg { width: 15px; height: 15px; fill: var(--text-mid); }
+
+    /* hint */
+    .flip-hint {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-light);
+      height: 18px;
+    }
+
+    /* SRS */
+    .srs-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(6px);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+    }
+    .srs-grid.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .srs-btn {
+      padding: 11px 6px;
+      border-radius: var(--rs);
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid;
+      transition: filter 0.15s;
+    }
+    .srs-btn:hover { filter: brightness(0.94); }
+    .srs-forgot  { background: var(--red-pale);    border-color: var(--red-border);    color: #be123c; }
+    .srs-good    { background: var(--yellow-pale);  border-color: var(--yellow-border); color: #92400e; }
+    .srs-master  { background: var(--mint-pale);    border-color: var(--mint-border);   color: #065f46; }
+
+    /* Nav */
+    .nav-row {
+      display: flex;
+      gap: 8px;
+    }
+    .nav-btn {
+      flex: 1;
+      padding: 10px;
+      border-radius: var(--rs);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-mid);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .nav-btn:hover { background: var(--pink-pale); border-color: var(--pink-soft); color: var(--pink); }
+
+    /* ── END SCREEN ───────────────────────── */
+    .end-screen {
+      text-align: center;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      animation: fadeUp 0.35s ease;
+    }
+    .end-screen.visible { display: flex; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .end-emoji  { font-size: 3.5rem; }
+    .end-title  { font-size: 1.5rem; font-weight: 800; }
+    .end-sub    { font-size: 0.86rem; color: var(--text-mid); }
+
+    .stats-row {
+      display: flex;
+      gap: 12px;
+    }
+    .stat-box {
+      padding: 16px 22px;
+      border-radius: var(--r);
+      border: 1px solid;
+      text-align: center;
+      min-width: 88px;
+    }
+    .stat-box.s-forgot  { background: var(--red-pale);    border-color: var(--red-border); }
+    .stat-box.s-good    { background: var(--yellow-pale);  border-color: var(--yellow-border); }
+    .stat-box.s-master  { background: var(--mint-pale);    border-color: var(--mint-border); }
+
+    .stat-num   { font-size: 1.9rem; font-weight: 800; line-height: 1; }
+    .s-forgot .stat-num  { color: var(--red); }
+    .s-good   .stat-num  { color: var(--yellow); }
+    .s-master .stat-num  { color: var(--mint); }
+    .stat-lbl   { font-size: 0.72rem; font-weight: 700; margin-top: 5px; opacity: 0.65; }
+
+    .end-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+    /* ── MODAL ────────────────────────────── */
+    .modal-bg {
+      position: fixed;
+      inset: 0;
+      background: rgba(45, 31, 61, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      backdrop-filter: blur(3px);
+    }
+    .modal-bg.open { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border-radius: var(--r);
+      padding: 26px;
+      width: 90%;
+      max-width: 520px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.16);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      animation: fadeUp 0.25s ease;
+    }
+
+    .modal-title { font-size: 1.05rem; font-weight: 800; }
+    .modal-hint  { font-size: 0.8rem; color: var(--text-mid); line-height: 1.55; }
+    .modal-hint code {
+      background: var(--sidebar-bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+    }
+
+    .modal-textarea {
+      width: 100%;
+      height: 190px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: var(--rs);
+      padding: 11px;
+      font-size: 0.79rem;
+      font-family: 'Courier New', monospace;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .modal-textarea:focus { outline: none; border-color: var(--pink); }
+
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* ── RESPONSIVE ───────────────────────── */
+    @media (max-width: 620px) {
+      .sidebar { display: none; }
+      .main-panel { padding: 16px; }
+      .card-scene { height: 240px; }
+      .back-korean { font-size: 1.7rem; }
+      .header-right .btn:not(.btn-primary) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header class="app-header">
+  <div class="app-title">✿ <span>Hong's</span> Korean Vocab</div>
+  <div class="header-right">
+    <button class="btn" onclick="openPasteModal()">✦ Paste from Gemini</button>
+    <label class="btn btn-primary">
+      ↑ Upload CSV
+      <input type="file" id="csv-upload" accept=".csv">
+    </label>
+    <button class="btn" onclick="exportProgress()" title="Export SRS progress">⬇ Progress</button>
+    <label class="btn" title="Import SRS progress">
+      ↑ Restore
+      <input type="file" id="json-upload" accept=".json">
+    </label>
+  </div>
+</header>
+
+<!-- ── BODY ── -->
+<div class="app-body">
+
+  <!-- LEFT SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-label">Sessions</div>
+    <div class="session-scroll" id="session-list">
+      <div style="padding:16px 10px;text-align:center;color:var(--text-light);font-size:0.8rem;">Loading…</div>
+    </div>
+    <div class="card-list-wrap" id="card-list-wrap" style="display:none;">
+      <div class="sidebar-label" id="card-list-label">Cards (0)</div>
+      <div class="card-list-scroll" id="card-list"></div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main-panel" id="main-panel">
+
+    <!-- Empty state -->
+    <div class="empty-state" id="empty-state">
+      <div class="empty-emoji">✿</div>
+      <div class="empty-title">Pick a session to start</div>
+      <div class="empty-sub">
+        Choose a date from the sidebar,<br>
+        or paste CSV from Gemini above ↑
+      </div>
+    </div>
+
+    <!-- Study area -->
+    <div class="study-area" id="study-area" style="display:none;">
+
+      <!-- Progress row -->
+      <div class="progress-row">
+        <div class="progress-label" id="progress-label">1 / 15</div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+        </div>
+        <div class="sniper-badge" id="sniper-badge">🎯 Retry</div>
+      </div>
+
+      <!-- Flashcard -->
+      <div class="card-scene" onclick="flipCard()">
+        <div class="card-inner" id="card-inner">
+
+          <!-- Front: Chinese definition -->
+          <div class="card-face card-front">
+            <div class="card-face-label">Definition</div>
+            <div class="front-chinese" id="front-text"></div>
+            <button class="tts-btn" onclick="event.stopPropagation();playTTS('front')" title="Read aloud">
+              <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            </button>
+          </div>
+
+          <!-- Back: Korean word + details -->
+          <div class="card-face card-back">
+            <div class="back-top">
+              <div class="card-face-label" style="margin:0;">Korean Word</div>
+              <div class="back-korean" id="back-korean"></div>
+              <div class="badge-row" id="badge-row"></div>
+            </div>
+            <div class="back-sentence" id="back-sentence"></div>
+            <button class="tts-btn" onclick="event.stopPropagation();playTTS('back')" title="Read Korean aloud">
+              <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Flip hint / SRS -->
+      <div class="flip-hint" id="flip-hint">Click card to reveal ✦</div>
+
+      <div class="srs-grid" id="srs-grid">
+        <button class="srs-btn srs-forgot"  onclick="rateCard(1)">😢 Forgot</button>
+        <button class="srs-btn srs-good"    onclick="rateCard(3)">🙂 Good</button>
+        <button class="srs-btn srs-master"  onclick="rateCard(5)">✨ Mastered</button>
+      </div>
+
+      <div class="nav-row">
+        <button class="nav-btn" onclick="navigate(-1)">← Prev</button>
+        <button class="nav-btn" onclick="navigate(1)">Next →</button>
+      </div>
+
+    </div>
+
+    <!-- End screen -->
+    <div class="end-screen" id="end-screen">
+      <div class="end-emoji">🎉</div>
+      <div class="end-title">Session complete!</div>
+      <div class="end-sub">Here's how you did this round</div>
+      <div class="stats-row">
+        <div class="stat-box s-forgot">
+          <div class="stat-num" id="stat-forgot">0</div>
+          <div class="stat-lbl">Forgot</div>
+        </div>
+        <div class="stat-box s-good">
+          <div class="stat-num" id="stat-good">0</div>
+          <div class="stat-lbl">Good</div>
+        </div>
+        <div class="stat-box s-master">
+          <div class="stat-num" id="stat-master">0</div>
+          <div class="stat-lbl">Mastered</div>
+        </div>
+      </div>
+      <div class="end-actions">
+        <button class="btn btn-primary" id="btn-retry" onclick="startSniperMode()">🎯 Retry weak cards</button>
+        <button class="btn" onclick="restartSession()">↺ Restart session</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── PASTE MODAL ── -->
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <div class="modal-title">✦ Paste CSV from Gemini</div>
+    <div class="modal-hint">
+      Copy the CSV output from Gemini and paste it here.<br>
+      Expected format with header row: <code>Word, Definition, Sentence</code>
+    </div>
+    <textarea class="modal-textarea" id="paste-ta"
+      placeholder="Word,Definition,Sentence&#10;잘 되다,&quot;顺利 / [EN] To go well&quot;,example sentence..."></textarea>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="loadPasted()">Load cards</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════
+let sessions     = [];
+let cards        = [];        // current active cards (all)
+let activeIdxs   = [];        // subset for sniper or all
+let idx          = 0;         // relative pointer in activeIdxs
+let isFlipped    = false;
+let isSniperMode = false;
+let sessionKey   = null;
+let srs          = {};        // { korean: { rating, rep, interval, efactor, dueDate } }
+
+const LS = {
+  srs:     'hk_srs_v2',
+  cards:   'hk_cards_v2',
+  session: 'hk_session_v2',
+  idx:     'hk_idx_v2',
+  sniper:  'hk_sniper_v2',
+};
+
+// ════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', async () => {
+  loadSRS();
+  setupListeners();
+  await fetchSessions();
+  restoreLastState();
+});
+
+async function fetchSessions() {
+  try {
+    const r = await fetch('sessions.json');
+    sessions = await r.json();
+    renderSessionList();
+  } catch {
+    document.getElementById('session-list').innerHTML =
+      '<div style="padding:16px;text-align:center;color:var(--text-light);font-size:0.8rem;">No sessions found.<br>Upload a CSV or paste from Gemini.</div>';
+  }
+}
+
+function renderSessionList() {
+  const el = document.getElementById('session-list');
+  el.innerHTML = '';
+  sessions.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'session-item' + (s.file === sessionKey ? ' active' : '');
+
+    div.innerHTML = `
+      <div class="session-dot"></div>
+      <div class="session-info">
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+          <span class="session-date">${s.label}</span>
+          ${s.tag ? `<span class="tag-pill">${s.tag}</span>` : ''}
+        </div>
+        <div class="session-meta">${s.count} cards</div>
+      </div>
+    `;
+    div.onclick = () => fetchAndLoadCSV(s.file, s.label);
+    el.appendChild(div);
+  });
+}
+
+async function fetchAndLoadCSV(file, label) {
+  try {
+    const r = await fetch(file);
+    const text = await r.text();
+    const parsed = parseCSV(text);
+    if (!parsed.length) { alert('No cards found in this CSV.'); return; }
+    initCards(parsed, file);
+  } catch (e) {
+    alert('Could not load session: ' + e.message);
+  }
+}
+
+function restoreLastState() {
+  const raw = localStorage.getItem(LS.cards);
+  if (!raw) return;
+  try {
+    cards        = JSON.parse(raw);
+    sessionKey   = localStorage.getItem(LS.session) || null;
+    idx          = parseInt(localStorage.getItem(LS.idx), 10) || 0;
+    isSniperMode = localStorage.getItem(LS.sniper) === 'true';
+    buildActive();
+    if (idx >= activeIdxs.length) idx = 0;
+    renderSessionList();
+    renderCardList();
+    showStudy();
+    renderCard();
+  } catch { /* ignore */ }
+}
+
+// ════════════════════════════════════════
+//  CSV PARSING
+// ════════════════════════════════════════
+function parseCSV(text) {
+  const lines = [];
+  let row = [''], inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], nx = text[i + 1];
+    if (c === '"') {
+      if (inQ && nx === '"') { row[row.length - 1] += '"'; i++; }
+      else { inQ = !inQ; }
+    } else if (c === ',' && !inQ) {
+      row.push('');
+    } else if ((c === '\n' || c === '\r') && !inQ) {
+      if (c === '\r' && nx === '\n') i++;
+      lines.push(row); row = [''];
+    } else {
+      row[row.length - 1] += c;
+    }
+  }
+  if (row.length > 1 || row[0]) lines.push(row);
+  if (lines.length < 2) return [];
+
+  const hdrs = lines[0].map(h => h.trim().toLowerCase());
+  const wI = Math.max(0, hdrs.findIndex(h => /word|korean|한/.test(h)));
+  const dI = hdrs.findIndex(h => /defin|expla|meaning/.test(h));
+  const sI = hdrs.findIndex(h => /sentence|example/.test(h));
+  const defIdx = dI !== -1 ? dI : 1;
+  const senIdx = sI !== -1 ? sI : 2;
+
+  return lines.slice(1)
+    .filter(l => l.length > Math.max(wI, defIdx))
+    .map(l => {
+      const korean  = (l[wI]      || '').trim();
+      const rawDef  = (l[defIdx]  || '').trim();
+      const sentence= (l[senIdx]  || '').trim();
+
+      // Extract [EN] portion (after "/ [EN]")
+      let chDef = rawDef, english = '';
+      const enIdx2 = rawDef.search(/\/\s*\[EN\]/i);
+      if (enIdx2 !== -1) {
+        english = rawDef.slice(enIdx2).replace(/\/\s*\[EN\]\s*/i, '').trim();
+        chDef   = rawDef.slice(0, enIdx2).trim();
+      }
+
+      // Extract hanja in (parentheses containing CJK)
+      let hanja = '';
+      const hm = chDef.match(/\(([^)]*[一-龥][^)]*)\)/);
+      if (hm) { hanja = hm[1].trim(); chDef = chDef.replace(hm[0], '').trim(); }
+
+      // Clean trailing dashes/slashes from Gemini format
+      chDef = chDef.replace(/\s*\(---\)\s*/g, '').replace(/\/\s*$/, '').trim();
+
+      // front = Chinese definition (what user reads first)
+      return { front: chDef, korean, hanja, english, sentence,
+               rating: 0, rep: 0, interval: 0, efactor: 2.5, dueDate: 0 };
+    })
+    .filter(c => c.front && c.korean);
+}
+
+// ════════════════════════════════════════
+//  CARD INIT
+// ════════════════════════════════════════
+function initCards(parsed, key) {
+  cards        = parsed;
+  sessionKey   = key;
+  isSniperMode = false;
+  idx          = 0;
+
+  localStorage.setItem(LS.cards,   JSON.stringify(cards));
+  localStorage.setItem(LS.session, key);
+  localStorage.setItem(LS.idx,     0);
+  localStorage.setItem(LS.sniper,  'false');
+
+  buildActive();
+  renderSessionList();
+  renderCardList();
+  showStudy();
+  renderCard();
+}
+
+// ════════════════════════════════════════
+//  SRS
+// ════════════════════════════════════════
+function loadSRS() {
+  const raw = localStorage.getItem(LS.srs);
+  srs = raw ? JSON.parse(raw) : {};
+}
+function saveSRS() { localStorage.setItem(LS.srs, JSON.stringify(srs)); }
+function getRating(korean) { return srs[korean]?.rating || 0; }
+
+function buildActive() {
+  activeIdxs = isSniperMode
+    ? cards.map((_, i) => i).filter(i => getRating(cards[i].korean) !== 5)
+    : cards.map((_, i) => i);
+}
+
+function rateCard(rating) {
+  if (!activeIdxs.length) return;
+  const ai = activeIdxs[idx];
+  const card = cards[ai];
+  const stat = srs[card.korean] || (srs[card.korean] = { rating: 0, rep: 0, interval: 0, efactor: 2.5, dueDate: 0 });
+
+  stat.rating = rating;
+  if (rating >= 3) {
+    stat.interval = stat.rep === 0 ? 1 : stat.rep === 1 ? 6 : Math.round(stat.interval * stat.efactor);
+    stat.rep++;
+  } else {
+    stat.rep = 0; stat.interval = 1;
+  }
+  stat.efactor = Math.max(1.3, stat.efactor + 0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02));
+  stat.dueDate = Date.now() + stat.interval * 86400000;
+
+  saveSRS();
+  renderCardList();
+  animateOut(() => {
+    if (idx >= activeIdxs.length - 1) { showEndScreen(); }
+    else { idx++; localStorage.setItem(LS.idx, idx); renderCard(); }
+  });
+}
+
+// ════════════════════════════════════════
+//  RENDER
+// ════════════════════════════════════════
+function renderCard() {
+  if (!activeIdxs.length) return;
+  isFlipped = false;
+  document.getElementById('card-inner').classList.remove('flipped');
+  document.getElementById('srs-grid').classList.remove('visible');
+  document.getElementById('flip-hint').style.visibility = 'visible';
+
+  const card = cards[activeIdxs[idx]];
+  document.getElementById('front-text').textContent = card.front;
+  document.getElementById('back-korean').textContent = card.korean;
+
+  const badges = document.getElementById('badge-row');
+  badges.innerHTML = '';
+  if (card.hanja)   badges.innerHTML += `<span class="badge badge-hanja">${card.hanja}</span>`;
+  if (card.english) badges.innerHTML += `<span class="badge badge-en">${card.english}</span>`;
+
+  document.getElementById('back-sentence').textContent = card.sentence || '(No example sentence)';
+
+  const pct = ((idx + 1) / activeIdxs.length) * 100;
+  document.getElementById('progress-label').textContent = `${idx + 1} / ${activeIdxs.length}`;
+  document.getElementById('progress-fill').style.width  = `${pct}%`;
+
+  document.getElementById('sniper-badge').classList.toggle('visible', isSniperMode);
+  highlightCardList();
+}
+
+function flipCard() {
+  if (!cards.length) return;
+  isFlipped = !isFlipped;
+  document.getElementById('card-inner').classList.toggle('flipped', isFlipped);
+  document.getElementById('srs-grid').classList.toggle('visible', isFlipped);
+  document.getElementById('flip-hint').style.visibility = isFlipped ? 'hidden' : 'visible';
+  if (isFlipped) playTTS('back');
+}
+
+function navigate(dir) {
+  if (!activeIdxs.length) return;
+  idx = (idx + dir + activeIdxs.length) % activeIdxs.length;
+  localStorage.setItem(LS.idx, idx);
+  renderCard();
+}
+
+function animateOut(cb) {
+  const ci = document.getElementById('card-inner');
+  ci.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
+  ci.style.opacity = '0'; ci.style.transform = 'translateX(-24px)';
+  setTimeout(() => {
+    cb();
+    ci.style.transition = ''; ci.style.opacity = ''; ci.style.transform = '';
+  }, 190);
+}
+
+// ════════════════════════════════════════
+//  VIEWS
+// ════════════════════════════════════════
+function showStudy() {
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('study-area').style.display  = 'flex';
+  document.getElementById('end-screen').classList.remove('visible');
+}
+
+function showEndScreen() {
+  document.getElementById('study-area').style.display = 'none';
+  document.getElementById('end-screen').classList.add('visible');
+
+  const forgot  = cards.filter(c => getRating(c.korean) === 1).length;
+  const good    = cards.filter(c => getRating(c.korean) === 3).length;
+  const mastered= cards.filter(c => getRating(c.korean) === 5).length;
+
+  document.getElementById('stat-forgot').textContent = forgot;
+  document.getElementById('stat-good').textContent   = good;
+  document.getElementById('stat-master').textContent = mastered;
+  document.getElementById('btn-retry').style.display = (forgot + good) > 0 ? '' : 'none';
+}
+
+function startSniperMode() {
+  isSniperMode = true;
+  localStorage.setItem(LS.sniper, 'true');
+  buildActive();
+  idx = 0;
+  if (!activeIdxs.length) { restartSession(); return; }
+  showStudy(); renderCard(); renderCardList();
+}
+
+function restartSession() {
+  isSniperMode = false;
+  localStorage.setItem(LS.sniper, 'false');
+  buildActive(); idx = 0;
+  localStorage.setItem(LS.idx, 0);
+  showStudy(); renderCard();
+}
+
+// ════════════════════════════════════════
+//  CARD LIST (sidebar bottom)
+// ════════════════════════════════════════
+function renderCardList() {
+  const wrap  = document.getElementById('card-list-wrap');
+  const lbl   = document.getElementById('card-list-label');
+  const list  = document.getElementById('card-list');
+  if (!cards.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'flex';
+  lbl.textContent = `Cards (${cards.length})`;
+  list.innerHTML = '';
+  cards.forEach((card, ai) => {
+    const ri = activeIdxs.indexOf(ai);
+    const div = document.createElement('div');
+    div.className = 'card-list-item' + (ri === idx && ri !== -1 ? ' current' : '');
+    const r = getRating(card.korean);
+    div.innerHTML = `<div class="sdot sdot-${r}"></div><span>${card.korean}</span>`;
+    div.onclick = () => {
+      const ri2 = activeIdxs.indexOf(ai);
+      if (ri2 !== -1) { idx = ri2; localStorage.setItem(LS.idx, idx); showStudy(); renderCard(); }
+    };
+    list.appendChild(div);
+    if (ri === idx) setTimeout(() => div.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
+  });
+}
+
+function highlightCardList() {
+  document.querySelectorAll('.card-list-item').forEach((div, ai) => {
+    const ri = activeIdxs.indexOf(ai);
+    div.classList.toggle('current', ri === idx && ri !== -1);
+    const r = getRating(cards[ai]?.korean || '');
+    const dot = div.querySelector('.sdot');
+    if (dot) dot.className = `sdot sdot-${r}`;
+  });
+}
+
+// ════════════════════════════════════════
+//  TTS
+// ════════════════════════════════════════
+function playTTS(side) {
+  if (!('speechSynthesis' in window) || !activeIdxs.length) return;
+  const card = cards[activeIdxs[idx]];
+  const text = side === 'back' ? card.korean : card.front;
+  const lang = side === 'back' ? 'ko-KR' : 'zh-CN';
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = lang; utt.rate = 0.85;
+  const voices = window.speechSynthesis.getVoices();
+  const v = voices.find(v => v.lang.startsWith(lang.slice(0, 2)));
+  if (v) utt.voice = v;
+  window.speechSynthesis.speak(utt);
+}
+if (window.speechSynthesis.onvoiceschanged !== undefined)
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+// ════════════════════════════════════════
+//  PASTE MODAL
+// ════════════════════════════════════════
+function openPasteModal()  { document.getElementById('modal-bg').classList.add('open'); document.getElementById('paste-ta').focus(); }
+function closeModal()      { document.getElementById('modal-bg').classList.remove('open'); document.getElementById('paste-ta').value = ''; }
+
+function loadPasted() {
+  const text = document.getElementById('paste-ta').value.trim();
+  if (!text) { alert('Paste some CSV content first.'); return; }
+  const parsed = parseCSV(text);
+  if (!parsed.length) { alert('Could not parse CSV.\nMake sure it has a header row: Word, Definition, Sentence'); return; }
+  initCards(parsed, 'pasted:' + Date.now());
+  closeModal();
+}
+
+// ════════════════════════════════════════
+//  FILE UPLOAD / IMPORT / EXPORT
+// ════════════════════════════════════════
+function setupListeners() {
+  document.getElementById('csv-upload').addEventListener('change', function(e) {
+    const f = e.target.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = ev => {
+      const parsed = parseCSV(ev.target.result);
+      if (!parsed.length) { alert('No valid cards found.'); return; }
+      initCards(parsed, 'upload:' + f.name);
+    };
+    rd.readAsText(f, 'UTF-8'); e.target.value = '';
+  });
+
+  document.getElementById('json-upload').addEventListener('change', function(e) {
+    const f = e.target.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.srsData || data.srs) {
+          srs = data.srsData || data.srs;
+          saveSRS(); renderCardList(); renderCard();
+          alert('Progress restored!');
+        } else { throw new Error(); }
+      } catch { alert('Invalid progress file.'); }
+    };
+    rd.readAsText(f, 'UTF-8'); e.target.value = '';
+  });
+
+  // Close modal on backdrop click
+  document.getElementById('modal-bg').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (document.getElementById('modal-bg').classList.contains('open')) return;
+    if (!activeIdxs.length) return;
+    if (e.code === 'Space')       { e.preventDefault(); flipCard(); }
+    else if (e.code === 'ArrowLeft')  navigate(-1);
+    else if (e.code === 'ArrowRight') navigate(1);
+    else if (e.code === 'Digit1') rateCard(1);
+    else if (e.code === 'Digit2') rateCard(3);
+    else if (e.code === 'Digit3') rateCard(5);
+  });
+}
+
+function exportProgress() {
+  if (!Object.keys(srs).length && !cards.length) { alert('Nothing to export yet.'); return; }
+  const data = { srsData: srs, exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: `hong_progress_${new Date().toISOString().slice(0,10)}.json` });
+  a.click(); URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
