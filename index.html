@@ -603,13 +603,69 @@
 
     .modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
 
+    /* ── HAMBURGER ────────────────────────── */
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: var(--rs);
+      color: var(--text);
+      font-size: 1.2rem;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .hamburger:hover { background: var(--pink-pale); }
+
+    /* Sidebar close button — inside sidebar, mobile only */
+    .sidebar-close {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      color: var(--text-mid);
+      padding: 2px 4px;
+      border-radius: 6px;
+      line-height: 1;
+    }
+    .sidebar-close:hover { background: var(--pink-pale); color: var(--pink-dark); }
+
+    /* Backdrop behind sidebar on mobile */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(18, 46, 44, 0.35);
+      z-index: 49;
+      backdrop-filter: blur(1px);
+    }
+    .sidebar-backdrop.open { display: block; }
+
     /* ── RESPONSIVE ───────────────────────── */
     @media (max-width: 620px) {
-      .sidebar { display: none; }
+      .hamburger { display: inline-flex; }
+      .sidebar-close { display: inline-flex; }
+
+      /* Sidebar slides in from left as overlay */
+      .sidebar {
+        position: fixed;
+        top: 0; left: 0;
+        height: 100dvh;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 4px 0 24px rgba(0,0,0,0.12);
+      }
+      .sidebar.open { transform: translateX(0); }
+
       .main-panel { padding: 16px; }
       .card-scene { height: 240px; }
       .back-korean { font-size: 1.7rem; }
-      .header-right .btn:not(.btn-primary) { display: none; }
+
+      /* Show only the two most important header buttons on mobile */
+      .header-right .btn-hide-mobile { display: none; }
     }
   </style>
 </head>
@@ -617,15 +673,18 @@
 
 <!-- ── HEADER ── -->
 <header class="app-header">
-  <div class="app-title">🐟 <span>Hong's</span> Korean Vocab</div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <button class="hamburger" onclick="toggleSidebar()" title="Open sessions">☰</button>
+    <div class="app-title">🐟 <span>Hong's</span> Korean Vocab</div>
+  </div>
   <div class="header-right">
     <button class="btn" onclick="openPasteModal()">✦ Paste from Gemini</button>
     <label class="btn btn-primary">
       ↑ Upload CSV
       <input type="file" id="csv-upload" accept=".csv">
     </label>
-    <button class="btn" onclick="exportProgress()" title="Download your ratings as a backup file (useful when switching devices)">⬇ Backup</button>
-    <label class="btn" title="Restore ratings from a previously downloaded backup file">
+    <button class="btn btn-hide-mobile" onclick="exportProgress()" title="Download your ratings as a backup file (useful when switching devices)">⬇ Backup</button>
+    <label class="btn btn-hide-mobile" title="Restore ratings from a previously downloaded backup file">
       ↑ Restore Backup
       <input type="file" id="json-upload" accept=".json">
     </label>
@@ -635,9 +694,15 @@
 <!-- ── BODY ── -->
 <div class="app-body">
 
+  <!-- Backdrop (mobile only) -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
   <!-- LEFT SIDEBAR -->
-  <aside class="sidebar">
-    <div class="sidebar-label">Sessions</div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-label" style="display:flex;justify-content:space-between;align-items:center;">
+      Sessions
+      <button class="sidebar-close" onclick="toggleSidebar()" title="Close">✕</button>
+    </div>
     <div class="autosave-bar">✓ Progress auto-saved in this browser</div>
     <div class="session-scroll" id="session-list">
       <div style="padding:16px 10px;text-align:center;color:var(--text-light);font-size:0.8rem;">Loading…</div>
@@ -841,6 +906,7 @@ async function fetchAndLoadCSV(file, label) {
     const parsed = parseCSV(text);
     if (!parsed.length) { alert('No cards found in this CSV.'); return; }
     initCards(parsed, file);
+    closeSidebarOnMobile();
   } catch (e) {
     alert('Could not load session: ' + e.message);
   }
@@ -1124,7 +1190,7 @@ function renderCardList() {
     // Clicking the row (not the dot) navigates to that card
     div.onclick = () => {
       const ri2 = activeIdxs.indexOf(ai);
-      if (ri2 !== -1) { idx = ri2; localStorage.setItem(LS.idx, idx); showStudy(); renderCard(); }
+      if (ri2 !== -1) { idx = ri2; localStorage.setItem(LS.idx, idx); showStudy(); renderCard(); closeSidebarOnMobile(); }
     };
 
     list.appendChild(div);
@@ -1164,6 +1230,23 @@ function playTTS(side) {
 }
 if (window.speechSynthesis.onvoiceschanged !== undefined)
   window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+// ════════════════════════════════════════
+//  MOBILE SIDEBAR TOGGLE
+// ════════════════════════════════════════
+function toggleSidebar() {
+  const sidebar  = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const isOpen   = sidebar.classList.toggle('open');
+  backdrop.classList.toggle('open', isOpen);
+}
+
+function closeSidebarOnMobile() {
+  if (window.innerWidth <= 620) {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-backdrop').classList.remove('open');
+  }
+}
 
 // ════════════════════════════════════════
 //  PASTE MODAL
