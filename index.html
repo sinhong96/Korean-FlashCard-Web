@@ -839,7 +839,8 @@
 // ════════════════════════════════════════
 //  STATE
 // ════════════════════════════════════════
-let sessions     = [];
+let sessions      = [];        // sessions from sessions.json (server-provided)
+let localSessions = [];        // sessions added via paste/upload, persisted in localStorage
 let cards        = [];        // current active cards (all)
 let activeIdxs   = [];        // subset for sniper or all
 let idx          = 0;         // relative pointer in activeIdxs
@@ -849,11 +850,12 @@ let sessionKey   = null;
 let srs          = {};        // { korean: { rating, rep, interval, efactor, dueDate } }
 
 const LS = {
-  srs:     'hk_srs_v2',
-  cards:   'hk_cards_v2',
-  session: 'hk_session_v2',
-  idx:     'hk_idx_v2',
-  sniper:  'hk_sniper_v2',
+  srs:           'hk_srs_v2',
+  cards:         'hk_cards_v2',
+  session:       'hk_session_v2',
+  idx:           'hk_idx_v2',
+  sniper:        'hk_sniper_v2',
+  localSessions: 'hk_local_sessions_v2',
 };
 
 // ════════════════════════════════════════
@@ -861,6 +863,7 @@ const LS = {
 // ════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', async () => {
   loadSRS();
+  loadLocalSessions();
   setupListeners();
   await fetchSessions();
   restoreLastState();
@@ -870,17 +873,40 @@ async function fetchSessions() {
   try {
     const r = await fetch('sessions.json');
     sessions = await r.json();
-    renderSessionList();
   } catch {
-    document.getElementById('session-list').innerHTML =
-      '<div style="padding:16px;text-align:center;color:var(--text-light);font-size:0.8rem;">No sessions found.<br>Upload a CSV or paste from Gemini.</div>';
+    sessions = [];
   }
+  renderSessionList();
+}
+
+// ── Pasted/uploaded sessions (persisted locally, not in sessions.json) ──
+function loadLocalSessions() {
+  const raw = localStorage.getItem(LS.localSessions);
+  localSessions = raw ? JSON.parse(raw) : [];
+}
+function saveLocalSessions() { localStorage.setItem(LS.localSessions, JSON.stringify(localSessions)); }
+
+function addLocalSession(file, label, tag, cardsData) {
+  const entry = { file, label, tag, count: cardsData.length, cards: cardsData };
+  const existingIdx = localSessions.findIndex(s => s.file === file);
+  if (existingIdx !== -1) localSessions[existingIdx] = entry;
+  else localSessions.unshift(entry);
+  saveLocalSessions();
+}
+
+function formatSessionLabel(date) {
+  return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function renderSessionList() {
   const el = document.getElementById('session-list');
+  const all = [...localSessions, ...sessions];
+  if (!all.length) {
+    el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-light);font-size:0.8rem;">No sessions found.<br>Upload a CSV or paste from Gemini.</div>';
+    return;
+  }
   el.innerHTML = '';
-  sessions.forEach(s => {
+  all.forEach(s => {
     const div = document.createElement('div');
     div.className = 'session-item' + (s.file === sessionKey ? ' active' : '');
 
@@ -894,9 +920,19 @@ function renderSessionList() {
         <div class="session-meta">${s.count} cards</div>
       </div>
     `;
-    div.onclick = () => fetchAndLoadCSV(s.file, s.label);
+    div.onclick = () => loadSession(s.file, s.label);
     el.appendChild(div);
   });
+}
+
+function loadSession(file, label) {
+  const local = localSessions.find(s => s.file === file);
+  if (local) {
+    initCards(local.cards, file);
+    closeSidebarOnMobile();
+  } else {
+    fetchAndLoadCSV(file, label);
+  }
 }
 
 async function fetchAndLoadCSV(file, label) {
@@ -1259,7 +1295,9 @@ function loadPasted() {
   if (!text) { alert('Paste some CSV content first.'); return; }
   const parsed = parseCSV(text);
   if (!parsed.length) { alert('Could not parse CSV.\nMake sure it has a header row: Word, Definition, Sentence'); return; }
-  initCards(parsed, 'pasted:' + Date.now());
+  const key = 'pasted:' + Date.now();
+  addLocalSession(key, formatSessionLabel(new Date()), 'Pasted', parsed);
+  initCards(parsed, key);
   closeModal();
 }
 
@@ -1273,7 +1311,9 @@ function setupListeners() {
     rd.onload = ev => {
       const parsed = parseCSV(ev.target.result);
       if (!parsed.length) { alert('No valid cards found.'); return; }
-      initCards(parsed, 'upload:' + f.name);
+      const key = 'upload:' + f.name + ':' + Date.now();
+      addLocalSession(key, f.name, 'CSV', parsed);
+      initCards(parsed, key);
     };
     rd.readAsText(f, 'UTF-8'); e.target.value = '';
   });
