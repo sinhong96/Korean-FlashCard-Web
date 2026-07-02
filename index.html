@@ -887,7 +887,7 @@ function loadLocalSessions() {
 function saveLocalSessions() { localStorage.setItem(LS.localSessions, JSON.stringify(localSessions)); }
 
 function addLocalSession(file, label, tag, cardsData) {
-  const entry = { file, label, tag, count: cardsData.length, cards: cardsData };
+  const entry = { file, label, tag, count: cardsData.length, cards: cardsData, ts: Date.now() };
   const existingIdx = localSessions.findIndex(s => s.file === file);
   if (existingIdx !== -1) localSessions[existingIdx] = entry;
   else localSessions.unshift(entry);
@@ -898,9 +898,16 @@ function formatSessionLabel(date) {
   return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// Local sessions carry a real timestamp (ts); sessions.json entries only have a
+// day-level date, tie-broken by their "session" number (1st, 2nd that day, etc).
+function sessionSortKey(s) {
+  if (s.ts) return s.ts;
+  return new Date(s.date).getTime() + (s.session || 0) * 1000;
+}
+
 function renderSessionList() {
   const el = document.getElementById('session-list');
-  const all = [...localSessions, ...sessions];
+  const all = [...localSessions, ...sessions].sort((a, b) => sessionSortKey(b) - sessionSortKey(a));
   if (!all.length) {
     el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-light);font-size:0.8rem;">No sessions found.<br>Upload a CSV or paste from Gemini.</div>';
     return;
