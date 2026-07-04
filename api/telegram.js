@@ -39,10 +39,19 @@ module.exports = async (req, res) => {
   try {
     let reply;
     const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
-    if (addMatch) {
+    const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
+    if (/^\/(start|help)\b/i.test(text)) {
+      reply = helpText();
+    } else if (addMatch) {
       reply = await addWords(addMatch[1]);
+    } else if (relMatch) {
+      reply = await relatedWords(relMatch[1]);
+    } else if (/^\/?related\b/i.test(text)) {
+      reply = "Usage: /related 단어 — I'll find words you've already learned that connect to it.";
     } else if (/^\/?(quiz|test)( me)?\b/i.test(text)) {
       reply = await quiz();
+    } else if (/^\/weak\b/i.test(text)) {
+      reply = await weakWords();
     } else {
       reply = await recallCheck(text);
     }
@@ -161,7 +170,91 @@ async function recallCheck(question) {
     ? "His flashcard entries:\n" +
       matches.map((m) => `- ${m.word} | ${m.definition} | ${m.sentence} | (session: ${m.session})`).join("\n")
     : "No matching entry found in his flashcards — say so, then answer from your own knowledge.";
-  return claude(TUTOR_SYSTEM, `${context}\n\nHis message: ${question}`);
+  const reply = await claude(TUTOR_SYSTEM, `${context}\n\nHis message: ${question}`);
+  await logWeak(matches); // remember what he keeps asking about, for /weak
+  return reply;
+}
+
+function helpText() {
+  return (
+    "Korean vocab bot — what I can do:\n\n" +
+    "• Just ask, e.g. \"what does 밥값 mean?\" or guess a meaning and I'll check you\n" +
+    "• /related 단어 — words you've already learned that connect to this one\n" +
+    "• /weak — the words you keep asking about (your weak spots)\n" +
+    "• /quiz — a quick 5-question drill from your vocab\n" +
+    "• /add 단어1, 단어2 — add new words to your flashcard app from here"
+  );
+}
+
+async function relatedWords(word) {
+  const target = word.trim();
+  const { all } = await loadVocab();
+  const vocabList = all.map((v) => `${v.word} = ${v.definition}`).join("\n");
+  const sys =
+    "You help a Korean learner find connections between words he has already studied. " +
+    "Given a target word and his full vocab list, pick up to 6 words FROM HIS LIST that are " +
+    "meaningfully related to the target — same theme, synonyms, antonyms, shared Hanja/root, or " +
+    "words commonly used together. Only choose words that actually appear in his list. For each, " +
+    "give: the Korean word, a short English gloss, and a few words on how it relates to the target. " +
+    "Plain text, no markdown. If nothing in his list relates, say so plainly and suggest 2-3 new " +
+    "related words he could learn next (mark those clearly as 'not in your list yet').";
+  return claude(sys, `Target word: ${target}\n\nHis vocab list:\n${vocabList}`);
+}
+
+// ---------- weak-word tracking (optional: needs GIST_ID env var) ----------
+// Stored in a private GitHub Gist so updates never touch the repo / trigger a
+// Vercel redeploy. GITHUB_TOKEN must have the "Gists" account permission.
+
+async function readGist() {
+  const r = await fetch(`https://api.github.com/gists/${process.env.GIST_ID}`, { headers: ghHeaders() });
+  if (!r.ok) throw new Error(`Gist read: ${r.status}`);
+  const data = await r.json();
+  const f = data.files && data.files["weak_words.json"];
+  if (!f || !f.content) return {};
+  try { return JSON.parse(f.content); } catch { return {}; }
+}
+
+async function writeGist(obj) {
+  const r = await fetch(`https://api.github.com/gists/${process.env.GIST_ID}`, {
+    method: "PATCH",
+    headers: ghHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ files: { "weak_words.json": { content: JSON.stringify(obj, null, 2) } } }),
+  });
+  if (!r.ok) throw new Error(`Gist write: ${r.status}`);
+}
+
+async function logWeak(matches) {
+  if (!process.env.GIST_ID || !matches.length) return;
+  try {
+    const state = await readGist();
+    const now = new Date().toISOString();
+    for (const m of matches) {
+      const e = state[m.word] || { definition: m.definition, count: 0 };
+      e.count += 1;
+      e.last = now;
+      e.definition = m.definition;
+      state[m.word] = e;
+    }
+    await writeGist(state);
+  } catch (err) {
+    console.error("logWeak", err.message); // best-effort; never block the reply
+  }
+}
+
+async function weakWords() {
+  if (!process.env.GIST_ID) {
+    return "Weak-word tracking isn't switched on yet — it needs a GIST_ID env var. Ask Claude to finish setting it up.";
+  }
+  const state = await readGist();
+  const entries = Object.entries(state);
+  if (!entries.length) {
+    return "No weak words tracked yet. Ask me about words you're unsure of and they'll start showing up here.";
+  }
+  entries.sort((a, b) => b[1].count - a[1].count || (b[1].last || "").localeCompare(a[1].last || ""));
+  return (
+    "Words you keep asking about — most-forgotten first:\n\n" +
+    entries.slice(0, 12).map(([w, e], i) => `${i + 1}. ${w} — ${e.definition}  (asked ${e.count}×)`).join("\n")
+  );
 }
 
 async function quiz() {
