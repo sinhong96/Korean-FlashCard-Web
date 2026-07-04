@@ -14,6 +14,8 @@
 // Optional:
 //   ALLOWED_CHAT_ID        your Telegram chat id; if set, other chats are ignored
 
+const { readGist, writeGist } = require("../lib/store");
+
 const REPO = "sinhong96/Korean-FlashCard-Web";
 const BRANCH = "main";
 const TIMEZONE = "Asia/Singapore";
@@ -26,6 +28,13 @@ module.exports = async (req, res) => {
     req.headers["x-telegram-bot-api-secret-token"] !== process.env.TELEGRAM_SECRET_TOKEN
   ) {
     return res.status(401).send("bad secret");
+  }
+
+  // Button taps from the daily review push arrive as callback queries
+  const cq = req.body && req.body.callback_query;
+  if (cq) {
+    try { await handleCallback(cq); } catch (e) { console.error("callback", e.message); }
+    return res.status(200).send("ok");
   }
 
   const msg = req.body && req.body.message;
@@ -170,9 +179,7 @@ async function recallCheck(question) {
     ? "His flashcard entries:\n" +
       matches.map((m) => `- ${m.word} | ${m.definition} | ${m.sentence} | (session: ${m.session})`).join("\n")
     : "No matching entry found in his flashcards — say so, then answer from your own knowledge.";
-  const reply = await claude(TUTOR_SYSTEM, `${context}\n\nHis message: ${question}`);
-  await logWeak(matches); // remember what he keeps asking about, for /weak
-  return reply;
+  return claude(TUTOR_SYSTEM, `${context}\n\nHis message: ${question}`);
 }
 
 function helpText() {
@@ -201,60 +208,66 @@ async function relatedWords(word) {
   return claude(sys, `Target word: ${target}\n\nHis vocab list:\n${vocabList}`);
 }
 
-// ---------- weak-word tracking (optional: needs GIST_ID env var) ----------
-// Stored in a private GitHub Gist so updates never touch the repo / trigger a
-// Vercel redeploy. GITHUB_TOKEN must have the "Gists" account permission.
-
-async function readGist() {
-  const r = await fetch(`https://api.github.com/gists/${process.env.GIST_ID}`, { headers: ghHeaders() });
-  if (!r.ok) throw new Error(`Gist read: ${r.status}`);
-  const data = await r.json();
-  const f = data.files && data.files["weak_words.json"];
-  if (!f || !f.content) return {};
-  try { return JSON.parse(f.content); } catch { return {}; }
-}
-
-async function writeGist(obj) {
-  const r = await fetch(`https://api.github.com/gists/${process.env.GIST_ID}`, {
-    method: "PATCH",
-    headers: ghHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ files: { "weak_words.json": { content: JSON.stringify(obj, null, 2) } } }),
-  });
-  if (!r.ok) throw new Error(`Gist write: ${r.status}`);
-}
-
-async function logWeak(matches) {
-  if (!process.env.GIST_ID || !matches.length) return;
-  try {
-    const state = await readGist();
-    const now = new Date().toISOString();
-    for (const m of matches) {
-      const e = state[m.word] || { definition: m.definition, count: 0 };
-      e.count += 1;
-      e.last = now;
-      e.definition = m.definition;
-      state[m.word] = e;
-    }
-    await writeGist(state);
-  } catch (err) {
-    console.error("logWeak", err.message); // best-effort; never block the reply
-  }
-}
+// ---------- review queue (words marked 😢 Forgot in the flashcard app) ----------
+// Stored in a private Gist so updates never trigger a repo redeploy. The app
+// syncs forgot/mastered taps here via /api/sync; the daily cron pushes words
+// from it; button taps below remove or keep them. Needs GIST_ID + a
+// GITHUB_TOKEN with the "Gists" account permission.
 
 async function weakWords() {
   if (!process.env.GIST_ID) {
-    return "Weak-word tracking isn't switched on yet — it needs a GIST_ID env var. Ask Claude to finish setting it up.";
+    return "Review tracking isn't switched on yet — it needs a GIST_ID env var. Ask Claude to finish setting it up.";
   }
   const state = await readGist();
   const entries = Object.entries(state);
   if (!entries.length) {
-    return "No weak words tracked yet. Ask me about words you're unsure of and they'll start showing up here.";
+    return "Nothing in your review queue. Mark words 😢 Forgot in the flashcard app and they'll show up here (and in your 7:30am review).";
   }
-  entries.sort((a, b) => b[1].count - a[1].count || (b[1].last || "").localeCompare(a[1].last || ""));
+  entries.sort((a, b) => (b[1].count || 0) - (a[1].count || 0) || (b[1].forgotAt || "").localeCompare(a[1].forgotAt || ""));
   return (
-    "Words you keep asking about — most-forgotten first:\n\n" +
-    entries.slice(0, 12).map(([w, e], i) => `${i + 1}. ${w} — ${e.definition}  (asked ${e.count}×)`).join("\n")
+    `You have ${entries.length} word${entries.length > 1 ? "s" : ""} in your review queue — top ones:\n\n` +
+    entries.slice(0, 15).map(([w, e], i) => `${i + 1}. ${w} — ${e.def || ""}  (forgot ${e.count || 1}×)`).join("\n")
   );
+}
+
+// Handle the ✅ Got it / 🔁 Still learning buttons on the daily push
+async function handleCallback(cq) {
+  const fromId = cq.from && cq.from.id;
+  if (process.env.ALLOWED_CHAT_ID && String(fromId) !== process.env.ALLOWED_CHAT_ID) {
+    return answerCallback(cq.id, "Not allowed");
+  }
+  const data = cq.data || "";
+  const sep = data.indexOf("|");
+  const kind = data.slice(0, sep);
+  const word = data.slice(sep + 1);
+
+  if (kind === "m" && process.env.GIST_ID) {
+    const state = await readGist();
+    delete state[word]; // mastered — remove from the queue
+    await writeGist(state);
+  }
+  await answerCallback(cq.id, kind === "m" ? `✅ ${word} — mastered!` : `🔁 ${word} — kept for next time`);
+  if (cq.message) {
+    const tag = kind === "m" ? "✅ mastered" : "🔁 still learning";
+    await editMessage(cq.message.chat.id, cq.message.message_id, `${cq.message.text}\n\n— ${tag}`);
+  }
+}
+
+async function answerCallback(id, text) {
+  await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: id, text }),
+  });
+}
+
+async function editMessage(chatId, messageId, text) {
+  // Omitting reply_markup removes the inline buttons
+  await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text }),
+  });
 }
 
 async function quiz() {

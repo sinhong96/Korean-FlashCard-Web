@@ -914,6 +914,7 @@ function renderSessionList() {
   }
   el.innerHTML = '';
   all.forEach(s => {
+    const isLocal = localSessions.some(l => l.file === s.file);
     const div = document.createElement('div');
     div.className = 'session-item' + (s.file === sessionKey ? ' active' : '');
 
@@ -923,13 +924,29 @@ function renderSessionList() {
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
           <span class="session-date">${s.label}</span>
           ${s.tag ? `<span class="tag-pill">${s.tag}</span>` : ''}
+          ${isLocal ? `<span class="tag-pill" style="background:var(--red-pale,#fee);color:var(--red,#be123c);border-color:var(--red-border,#fbb);">this device</span>` : ''}
         </div>
         <div class="session-meta">${s.count} cards</div>
       </div>
+      ${isLocal ? `<button class="local-del" title="Remove this device-only copy" style="margin-left:auto;background:none;border:none;color:var(--text-light,#999);font-size:1.2rem;line-height:1;cursor:pointer;padding:0 6px;">&times;</button>` : ''}
     `;
     div.onclick = () => loadSession(s.file, s.label);
+    if (isLocal) {
+      div.querySelector('.local-del').onclick = (e) => {
+        e.stopPropagation();
+        if (confirm(`Remove the local copy of "${s.label}"?\n\nThis only clears it from this browser — if you also downloaded the CSV, that synced version stays.`)) {
+          deleteLocalSession(s.file);
+        }
+      };
+    }
     el.appendChild(div);
   });
+}
+
+function deleteLocalSession(file) {
+  localSessions = localSessions.filter(s => s.file !== file);
+  saveLocalSessions();
+  renderSessionList();
 }
 
 function loadSession(file, label) {
@@ -1060,6 +1077,23 @@ function loadSRS() {
   const raw = localStorage.getItem(LS.srs);
   srs = raw ? JSON.parse(raw) : {};
 }
+
+// Sync Forgot/Got-it taps to the review queue that feeds the 7:30am Telegram
+// push. rating 1-2 = still forgetting (add); 3-5 = knows it (remove). Writes
+// are chained so concurrent taps can't clobber each other's gist update.
+// Best-effort: if the endpoint is down the flashcard app is unaffected.
+let syncChain = Promise.resolve();
+function syncReview(card, rating) {
+  const body = JSON.stringify({
+    action: rating <= 2 ? 'forgot' : 'remove',
+    word: card.korean,
+    def: card.english || card.front || '',
+    sentence: card.sentence || '',
+  });
+  syncChain = syncChain.then(() =>
+    fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {})
+  );
+}
 function saveSRS() { localStorage.setItem(LS.srs, JSON.stringify(srs)); }
 function getRating(korean) { return srs[korean]?.rating || 0; }
 
@@ -1086,6 +1120,7 @@ function rateCard(rating) {
   stat.dueDate = Date.now() + stat.interval * 86400000;
 
   saveSRS();
+  syncReview(card, rating);
   renderCardList();
   animateOut(() => {
     if (idx >= activeIdxs.length - 1) { showEndScreen(); }
