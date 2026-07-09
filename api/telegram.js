@@ -1,6 +1,11 @@
 // Telegram vocab bot — Vercel serverless function, no dependencies.
 //
 // What it does:
+//   - "단어 뜻" (+ optional context line)  -> full structured teacher lesson; the
+//     word's CSV row is generated in the same call and stored in the gist batch.
+//     At 15/15 the batch auto-commits as a new session CSV. /v 단어 also works.
+//   - /batch                              -> show the current lesson batch
+//   - /csv                                -> flush the batch to a CSV session now
 //   - "what does X mean?" / any question  -> recall check against your vocab lists
 //   - "quiz" or "quiz me"                 -> quick quiz from random words
 //   - "add: word1, word2"                 -> generates entries in the trilingual
@@ -14,12 +19,15 @@
 // Optional:
 //   ALLOWED_CHAT_ID        your Telegram chat id; if set, other chats are ignored
 
-const { readGist, writeGist } = require("../lib/store");
+const { readGist, writeGist, readGistFile, writeGistFile } = require("../lib/store");
 
 const REPO = "sinhong96/Korean-FlashCard-Web";
 const BRANCH = "main";
 const TIMEZONE = "Asia/Singapore";
 const MODEL = "claude-haiku-4-5";
+const LESSON_MODEL = "claude-sonnet-5"; // lessons need nuance/wit; haiku stays for cheap tasks
+const BATCH_FILE = "vocab_batch.json";
+const BATCH_SIZE = 15;
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(200).send("ok");
@@ -49,6 +57,7 @@ module.exports = async (req, res) => {
     let reply;
     const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
     const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
+    const lessonMatch = parseLessonRequest(text);
     if (/^\/(start|help)\b/i.test(text)) {
       reply = helpText();
     } else if (addMatch) {
@@ -61,6 +70,12 @@ module.exports = async (req, res) => {
       reply = await quiz();
     } else if (/^\/weak\b/i.test(text)) {
       reply = await weakWords();
+    } else if (/^\/csv\b/i.test(text)) {
+      reply = await flushBatch();
+    } else if (/^\/batch\b/i.test(text)) {
+      reply = await batchStatus();
+    } else if (lessonMatch) {
+      reply = await vocabLesson(lessonMatch);
     } else {
       reply = await recallCheck(text);
     }
@@ -132,10 +147,10 @@ async function loadVocab() {
 
 // ---------- Claude API (raw fetch, no SDK) ----------
 
-async function claude(system, userText, outputSchema) {
+async function claude(system, userText, outputSchema, opts = {}) {
   const body = {
-    model: MODEL,
-    max_tokens: 1500,
+    model: opts.model || MODEL,
+    max_tokens: opts.maxTokens || 1500,
     system,
     messages: [{ role: "user", content: userText }],
   };
@@ -185,6 +200,10 @@ async function recallCheck(question) {
 function helpText() {
   return (
     "Korean vocab bot — what I can do:\n\n" +
+    "• \"단어 뜻\" (+ context sentence on the next line) — full teacher lesson; the word " +
+    "joins your current batch and auto-saves to the flashcard app at 15/15\n" +
+    "• /batch — see the current lesson batch\n" +
+    "• /csv — save the batch to a CSV session right now\n" +
     "• Just ask, e.g. \"what does 밥값 mean?\" or guess a meaning and I'll check you\n" +
     "• /related 단어 — words you've already learned that connect to this one\n" +
     "• /weak — the words you keep asking about (your weak spots)\n" +
@@ -280,6 +299,109 @@ async function quiz() {
   );
 }
 
+// ---------- vocab lessons: structured teacher reply + batched CSV rows ----------
+// The CSV row is generated in the SAME call as the lesson (no re-extraction pass,
+// so translations can't drift). Rows accumulate in the gist; at 15 the batch
+// auto-commits as a session CSV, exactly like the old Gemini download flow.
+
+// "튼실하다 뜻" (+ optional context lines below) or "/v 튼실하다" / "/learn ..."
+function parseLessonRequest(text) {
+  const cmd = text.match(/^\/(?:v|learn)\s+([\s\S]+)/i);
+  const body = cmd ? cmd[1].trim() : text;
+  const lines = body.split("\n");
+  const m = lines[0].match(/^(.{1,40}?)\s*(?:뜻|의 뜻|뜻은)\s*\??$/);
+  if (m) return { word: m[1].trim(), sentence: lines.slice(1).join("\n").trim() };
+  if (cmd) return { word: lines[0].trim(), sentence: lines.slice(1).join("\n").trim() };
+  return null;
+}
+
+const LESSON_SCHEMA = {
+  type: "object",
+  properties: {
+    lesson: { type: "string" },
+    word: { type: "string" },
+    definition: { type: "string" },
+    sentence: { type: "string" },
+  },
+  required: ["lesson", "word", "definition", "sentence"],
+  additionalProperties: false,
+};
+
+const LESSON_SYSTEM =
+  "You are Sin Hong's expert, witty Korean teacher, replying inside Telegram — plain text only, " +
+  "no markdown syntax (no ##, no **). He is a Chinese speaker learning Korean.\n\n" +
+  "Given a Korean word (and optionally a context sentence he met it in), return JSON with:\n\n" +
+  '"lesson" — a lesson in exactly this layout:\n\n' +
+  "'단어'는 [brief, clear definition in Korean].\n" +
+  "[If a context sentence was given: 1-2 sentences of witty or culturally insightful commentary on it.]\n\n" +
+  "📖 뜻\n" +
+  "- 사전적 정의: [Korean definition(s), numbered if several]\n" +
+  "- English: [translations, comma-separated]\n" +
+  "- Chinese: [translations with pinyin, comma-separated]\n\n" +
+  "💬 문맥\n" +
+  "[The specific nuance, cultural context, or humor of his sentence. If no sentence was given, " +
+  "explain the most common colloquial usage instead.]\n\n" +
+  "🗂 쓰이는 상황\n" +
+  '1. [Situation] — "[Korean example]" (中文翻译)\n' +
+  '2. [Situation] — "[Korean example]" (中文翻译)\n\n' +
+  "💡 선생님의 팁\n" +
+  "[Short, personalized tip using a practical real-world scenario.]\n" +
+  '"[Korean example]" (中文)\n\n' +
+  "✍️ 연습해 봅시다!\n" +
+  "[A question in Korean prompting him to practice the word.]\n" +
+  '(예: "[sample answer]")\n\n' +
+  'Keep the lesson under 3000 characters.\n\n' +
+  '"word" — the target Korean word/phrase only.\n' +
+  '"definition" — exactly this format: 现代中文核心解释 (原生韩文汉字放括号内, 没有就写 ---) / [EN] Brief English definition\n' +
+  '"sentence" — one natural Korean example sentence followed by its Chinese translation in parentheses. ' +
+  "If he gave a context sentence, prefer it (cleaned up / completed) as the example.";
+
+async function vocabLesson({ word, sentence }) {
+  const userText = sentence ? `Word: ${word}\nContext sentence: ${sentence}` : `Word: ${word}`;
+  const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 4000 });
+  const out = JSON.parse(gen);
+  const row = { word: (out.word || word).trim(), definition: out.definition, sentence: out.sentence };
+
+  if (!process.env.GIST_ID) {
+    // No batch store yet — save the word straight to today's Bot session instead
+    const saved = await commitEntries([row]);
+    return out.lesson + "\n\n(Batch tracking needs GIST_ID — saved this word directly.)\n" + saved;
+  }
+
+  const batch = await readGistFile(BATCH_FILE);
+  const rows = batch.rows || [];
+  const idx = rows.findIndex((r) => r.word === row.word);
+  if (idx >= 0) rows[idx] = row; // re-asking a word updates its row, no duplicate
+  else rows.push(row);
+  await writeGistFile(BATCH_FILE, { rows, startedAt: batch.startedAt || new Date().toISOString() });
+
+  if (rows.length >= BATCH_SIZE) {
+    const saved = await flushBatch();
+    return out.lesson + `\n\n🚨 Batch complete (${BATCH_SIZE}/${BATCH_SIZE})! Auto-saving…\n` + saved;
+  }
+  return out.lesson + `\n\n[Batch ${rows.length}/${BATCH_SIZE}]`;
+}
+
+async function batchStatus() {
+  if (!process.env.GIST_ID) return "Batch tracking needs GIST_ID set up first — ask Claude to finish Phase 0.";
+  const rows = (await readGistFile(BATCH_FILE)).rows || [];
+  if (!rows.length) return 'Batch is empty — send a word (e.g. "튼실하다 뜻") to start one.';
+  return (
+    `Current batch (${rows.length}/${BATCH_SIZE}):\n` +
+    rows.map((r, i) => `${i + 1}. ${r.word} — ${r.definition}`).join("\n") +
+    "\n\n/csv to save it to the flashcard app now."
+  );
+}
+
+async function flushBatch() {
+  if (!process.env.GIST_ID) return "Batch tracking needs GIST_ID set up first — ask Claude to finish Phase 0.";
+  const rows = (await readGistFile(BATCH_FILE)).rows || [];
+  if (!rows.length) return "Nothing to save — the batch is empty.";
+  const saved = await commitEntries(rows);
+  await writeGistFile(BATCH_FILE, { rows: [], startedAt: null });
+  return saved;
+}
+
 // ---------- add words: generate entries + commit to GitHub ----------
 
 const ENTRY_SCHEMA = {
@@ -315,7 +437,12 @@ async function addWords(input) {
   );
   const entries = JSON.parse(gen).entries;
   if (!entries.length) return "No entries generated.";
+  return commitEntries(entries);
+}
 
+// Commit entries [{word, definition, sentence}] to today's Bot session
+// (creating the CSV + manifest entry if needed). Shared by /add and batch flush.
+async function commitEntries(entries) {
   const csvEscape = (s) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   const lines = entries.map((e) => [e.word, e.definition, e.sentence].map(csvEscape).join(","));
 
