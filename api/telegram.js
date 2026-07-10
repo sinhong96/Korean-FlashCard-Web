@@ -346,9 +346,10 @@ const LESSON_SCHEMA = {
     chinese_options: { type: "array", items: { type: "string" } },
     hanja: { type: "string" },
     english: { type: "string" },
+    pronunciation: { type: "string" },
     sentence: { type: "string" },
   },
-  required: ["lesson", "word", "chinese_options", "hanja", "english", "sentence"],
+  required: ["lesson", "word", "chinese_options", "hanja", "english", "pronunciation", "sentence"],
   additionalProperties: false,
 };
 
@@ -361,7 +362,8 @@ const LESSON_SYSTEM =
   "literal &, < or > as &amp;, &lt;, &gt;.\n\n" +
   "Given a Korean word (and optionally a context sentence he met it in), return JSON with:\n\n" +
   '"lesson" — a lesson in exactly this layout:\n\n' +
-  "'단어'는 [brief, clear definition in Korean].\n" +
+  "'단어'는 [brief, clear definition in Korean]. — when the pronunciation differs from the " +
+  "spelling, write the word as '단어' [발음], e.g. '대통령' [대ː통녕].\n" +
   "[If a context sentence was given: 1-2 sentences of witty or culturally insightful commentary on it.]\n\n" +
   "📖 뜻\n" +
   "- 사전적 정의: [Korean definition(s), numbered if several]\n" +
@@ -388,6 +390,10 @@ const LESSON_SYSTEM =
   "NEVER write template labels such as 现代中文核心解释 or 原生韩文汉字.\n" +
   '"hanja" — the word\'s hanja: --- if none, - for each non-hanja syllable (e.g. 事情--, 嫌惡--).\n' +
   '"english" — brief English definition, comma-separated senses.\n' +
+  '"pronunciation" — the word\'s 표준 발음 in hangul with length marks, NO brackets (e.g. for ' +
+  "대통령: 대ː통녕; for 밥값: 밥깝). ONLY when it differs from the spelling — empty string \"\" when " +
+  "reading the spelling as written is already correct. Apply real sound rules (비음화, 경음화, " +
+  "연음, 자음동화, vowel length); do not invent differences.\n" +
   '"sentence" — one natural Korean example sentence followed by its Chinese translation in parentheses. ' +
   "If he gave a context sentence, prefer it (cleaned up / completed) as the example.";
 
@@ -400,6 +406,7 @@ async function vocabLesson({ word, sentence }) {
     word: (out.word || word).trim(),
     definition: `${options[0] || ""} (${(out.hanja || "---").trim()}) / [EN] ${(out.english || "").trim()}`,
     sentence: out.sentence,
+    pronunciation: (out.pronunciation || "").trim().replace(/^\[|\]$/g, ""),
   };
 
   // One tap swaps the flashcard's Chinese gloss (callback_data caps at 64 bytes)
@@ -497,8 +504,9 @@ const ENTRY_SCHEMA = {
           word: { type: "string" },
           definition: { type: "string" },
           sentence: { type: "string" },
+          pronunciation: { type: "string" },
         },
-        required: ["word", "definition", "sentence"],
+        required: ["word", "definition", "sentence", "pronunciation"],
         additionalProperties: false,
       },
     },
@@ -513,7 +521,8 @@ async function addWords(input) {
       "'中文含义 / 汉字词源 (漢字) / [EN] English meaning' (if no hanja exists use ---), and 'sentence' must be " +
       "a natural Korean example sentence followed by its Chinese translation in parentheses. " +
       "Match this style: 혐오하다 -> '厌恶 / 嫌恶 / 仇恨 (嫌惡--) / [EN] To hate, to loathe' with sentence " +
-      "'저는 소년범을 혐오합니다. (我厌恶少年犯。)'",
+      "'저는 소년범을 혐오합니다. (我厌恶少年犯。)'. 'pronunciation' is the 표준 발음 in hangul, no " +
+      "brackets (e.g. 대통령 -> 대ː통녕), and \"\" when it matches the spelling.",
     `Create flashcard entries for: ${input}`,
     ENTRY_SCHEMA
   );
@@ -526,7 +535,7 @@ async function addWords(input) {
 // (creating the CSV + manifest entry if needed). Shared by /add and batch flush.
 async function commitEntries(entries) {
   const csvEscape = (s) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-  const lines = entries.map((e) => [e.word, e.definition, e.sentence].map(csvEscape).join(","));
+  const lines = entries.map((e) => [e.word, e.definition, e.sentence, e.pronunciation || ""].map(csvEscape).join(","));
 
   const manifest = JSON.parse(await githubRaw("sessions.json"));
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date()); // YYYY-MM-DD
@@ -534,14 +543,17 @@ async function commitEntries(entries) {
   let entry = manifest.find((e) => e.date === today && e.tag === "Bot");
 
   if (entry) {
-    // Append to today's Bot session
-    const existing = await githubRaw(entry.file);
+    // Append to today's Bot session, upgrading a 3-column header if needed
+    let existing = await githubRaw(entry.file);
+    if (!/pron/i.test(existing.split("\n")[0])) {
+      existing = existing.replace(/^([^\n]*)/, "$1,Pronunciation");
+    }
     await ghPut(entry.file, existing.replace(/\n?$/, "\n") + lines.join("\n") + "\n", `Bot: add ${entries.length} word(s)`);
     entry.count += entries.length;
   } else {
     const session = Math.max(0, ...manifest.filter((e) => e.date === today).map((e) => e.session)) + 1;
     const file = `vocablist_csv/${compact}_${String(session).padStart(2, "0")}_LIST_Bot.csv`;
-    await ghPut(file, "Word,Definition,Sentence\n" + lines.join("\n") + "\n", `Bot: new session with ${entries.length} word(s)`);
+    await ghPut(file, "Word,Definition,Sentence,Pronunciation\n" + lines.join("\n") + "\n", `Bot: new session with ${entries.length} word(s)`);
     const d = new Date(today + "T00:00:00");
     const label = d.toLocaleString("en-US", { month: "short" }) + " " + d.getDate() + (session > 1 ? ` · #${session}` : "");
     entry = { file, date: today, session, tag: "Bot", label, count: entries.length };

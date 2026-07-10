@@ -398,6 +398,15 @@
       line-height: 1.2;
     }
 
+    /* Standard-Korean pronunciation, e.g. [대ː통녕], when it differs from spelling */
+    .back-pron {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-light);
+      letter-spacing: 0.02em;
+      margin-top: -4px;
+    }
+
     .badge-row {
       display: flex;
       gap: 6px;
@@ -763,6 +772,7 @@
             <div class="back-top">
               <div class="card-face-label" style="margin:0;">Korean Word</div>
               <div class="back-korean" id="back-korean"></div>
+              <div class="back-pron" id="back-pron"></div>
               <div class="badge-row" id="badge-row"></div>
             </div>
             <div class="back-sentence" id="back-sentence"></div>
@@ -1016,6 +1026,7 @@ function parseCSV(text) {
   const wI = Math.max(0, hdrs.findIndex(h => /word|korean|한/.test(h)));
   const dI = hdrs.findIndex(h => /defin|expla|meaning/.test(h));
   const sI = hdrs.findIndex(h => /sentence|example/.test(h));
+  const pI = hdrs.findIndex(h => /pron|발음/.test(h));
   const defIdx = dI !== -1 ? dI : 1;
   const senIdx = sI !== -1 ? sI : 2;
 
@@ -1025,6 +1036,7 @@ function parseCSV(text) {
       const korean  = (l[wI]      || '').trim();
       const rawDef  = (l[defIdx]  || '').trim();
       const sentence= (l[senIdx]  || '').trim();
+      const pron    = pI !== -1 ? (l[pI] || '').trim().replace(/^\[|\]$/g, '') : '';
 
       // Extract [EN] portion (after "/ [EN]")
       let chDef = rawDef, english = '';
@@ -1043,7 +1055,7 @@ function parseCSV(text) {
       chDef = chDef.replace(/\s*\(---\)\s*/g, '').replace(/\/\s*$/, '').trim();
 
       // front = Chinese definition (what user reads first)
-      return { front: chDef, korean, hanja, english, sentence,
+      return { front: chDef, korean, hanja, english, sentence, pron,
                rating: 0, rep: 0, interval: 0, efactor: 2.5, dueDate: 0 };
     })
     .filter(c => c.front && c.korean);
@@ -1141,6 +1153,9 @@ function renderCard() {
   const card = cards[activeIdxs[idx]];
   document.getElementById('front-text').textContent = card.front;
   document.getElementById('back-korean').textContent = card.korean;
+  const pronEl = document.getElementById('back-pron');
+  pronEl.textContent = card.pron ? `[${card.pron}]` : '';
+  pronEl.style.display = card.pron ? '' : 'none';
 
   const badges = document.getElementById('badge-row');
   badges.innerHTML = '';
