@@ -58,6 +58,7 @@ module.exports = async (req, res) => {
     let html = false; // lessons use Telegram HTML formatting; everything else stays plain
     const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
     const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
+    const defMatch = text.match(/^\/?def[:\s]+(\S+)\s+(.+)/is);
     const lessonMatch = parseLessonRequest(text);
     if (/^\/(start|help)\b/i.test(text)) {
       reply = helpText();
@@ -75,13 +76,18 @@ module.exports = async (req, res) => {
       reply = await flushBatch();
     } else if (/^\/batch\b/i.test(text)) {
       reply = await batchStatus();
+    } else if (defMatch) {
+      reply = await applyDefinition(defMatch[1], defMatch[2].trim());
+    } else if (/^\/def\b/i.test(text)) {
+      reply = "Usage: /def 단어 你的词 — sets the Chinese shown on that word's flashcard.";
     } else if (lessonMatch) {
       reply = await vocabLesson(lessonMatch);
       html = true;
     } else {
       reply = await recallCheck(text);
     }
-    await sendTelegram(chatId, reply, { html });
+    const payload = typeof reply === "string" ? { text: reply } : reply;
+    await sendTelegram(chatId, payload.text, { html, buttons: payload.buttons });
   } catch (err) {
     console.error(err);
     await sendTelegram(chatId, "Something went wrong: " + err.message).catch(() => {});
@@ -206,6 +212,7 @@ function helpText() {
     "joins your current batch and auto-saves to the flashcard app at 15/15\n" +
     "• /batch — see the current lesson batch\n" +
     "• /csv — save the batch to a CSV session right now\n" +
+    "• /def 단어 你的词 — change the Chinese shown on that word's flashcard\n" +
     "• Just ask, e.g. \"what does 밥값 mean?\" or guess a meaning and I'll check you\n" +
     "• /related 단어 — words you've already learned that connect to this one\n" +
     "• /weak — the words you keep asking about (your weak spots)\n" +
@@ -261,6 +268,20 @@ async function handleCallback(cq) {
   const sep = data.indexOf("|");
   const kind = data.slice(0, sep);
   const word = data.slice(sep + 1);
+
+  // "d|단어|中文" — a Chinese-gloss choice tapped under a lesson
+  if (kind === "d") {
+    const p = word.indexOf("|");
+    const w = word.slice(0, p);
+    const term = word.slice(p + 1);
+    let result;
+    try { result = await applyDefinition(w, term); } catch (e) { result = "Failed: " + e.message; }
+    await answerCallback(cq.id, result.slice(0, 190));
+    if (cq.message) {
+      await editMessage(cq.message.chat.id, cq.message.message_id, `${cq.message.text}\n\n— 🀄 ${w} → ${term}`);
+    }
+    return;
+  }
 
   if (kind === "m" && process.env.GIST_ID) {
     const state = await readGist();
@@ -322,10 +343,12 @@ const LESSON_SCHEMA = {
   properties: {
     lesson: { type: "string" },
     word: { type: "string" },
-    definition: { type: "string" },
+    chinese_options: { type: "array", items: { type: "string" } },
+    hanja: { type: "string" },
+    english: { type: "string" },
     sentence: { type: "string" },
   },
-  required: ["lesson", "word", "definition", "sentence"],
+  required: ["lesson", "word", "chinese_options", "hanja", "english", "sentence"],
   additionalProperties: false,
 };
 
@@ -357,14 +380,14 @@ const LESSON_SYSTEM =
   "[A question in Korean prompting him to practice the word.]\n" +
   '(예: "[sample answer]")\n\n' +
   'Keep the lesson under 3000 characters.\n\n' +
-  '"word" — the target Korean word/phrase only. No HTML in word/definition/sentence.\n' +
-  '"definition" — Chinese meaning(s), then the word\'s hanja in parentheses (--- if the word has ' +
-  "no hanja; use - for each non-hanja syllable), then / [EN] and a brief English definition. " +
-  "Write ONLY real content — NEVER copy template labels such as 现代中文核心解释 or 原生韩文汉字 " +
-  "into the output. Match these examples exactly in style:\n" +
-  "结实 / 饱满 / 扎实 (---) / [EN] Solid, sturdy, robust\n" +
-  "教区长 (敎區長) / [EN] Bishop of a diocese\n" +
-  "毫不留情地 / 无情地 (事情--) / [EN] Mercilessly, without regard for circumstances\n" +
+  '"word" — the target Korean word/phrase only. No HTML in any field except "lesson".\n' +
+  '"chinese_options" — 2-4 candidate Chinese glosses for the flashcard, each a concise everyday ' +
+  "Mandarin term (join close synonyms with /). Sin Hong is MALAYSIAN Chinese: order by what a " +
+  "Malaysian/SEA Mandarin speaker actually says — e.g. for 왕세자 put 王储 first and the literal " +
+  "hanja reading 王世子 later; include a literal reading only when it is real, natural Chinese. " +
+  "NEVER write template labels such as 现代中文核心解释 or 原生韩文汉字.\n" +
+  '"hanja" — the word\'s hanja: --- if none, - for each non-hanja syllable (e.g. 事情--, 嫌惡--).\n' +
+  '"english" — brief English definition, comma-separated senses.\n' +
   '"sentence" — one natural Korean example sentence followed by its Chinese translation in parentheses. ' +
   "If he gave a context sentence, prefer it (cleaned up / completed) as the example.";
 
@@ -372,12 +395,25 @@ async function vocabLesson({ word, sentence }) {
   const userText = sentence ? `Word: ${word}\nContext sentence: ${sentence}` : `Word: ${word}`;
   const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 4000 });
   const out = JSON.parse(gen);
-  const row = { word: (out.word || word).trim(), definition: out.definition, sentence: out.sentence };
+  const options = (out.chinese_options || []).map((s) => s.trim()).filter(Boolean);
+  const row = {
+    word: (out.word || word).trim(),
+    definition: `${options[0] || ""} (${(out.hanja || "---").trim()}) / [EN] ${(out.english || "").trim()}`,
+    sentence: out.sentence,
+  };
+
+  // One tap swaps the flashcard's Chinese gloss (callback_data caps at 64 bytes)
+  const choices = options
+    .filter((t) => Buffer.byteLength(`d|${row.word}|${t}`, "utf8") <= 64)
+    .slice(0, 4)
+    .map((t) => ({ text: t, callback_data: `d|${row.word}|${t}` }));
+  const buttons = choices.length > 1 ? [choices] : undefined;
+  const hint = buttons ? `\n🀄 Flashcard 中文 = ${options[0]} — tap to change, or /def ${row.word} 你的词` : "";
 
   if (!process.env.GIST_ID) {
     // No batch store yet — save the word straight to today's Bot session instead
     const saved = await commitEntries([row]);
-    return out.lesson + "\n\n(Batch tracking needs GIST_ID — saved this word directly.)\n" + saved;
+    return { text: out.lesson + "\n\n(Batch tracking needs GIST_ID — saved this word directly.)\n" + saved + hint, buttons };
   }
 
   const batch = await readGistFile(BATCH_FILE);
@@ -389,9 +425,43 @@ async function vocabLesson({ word, sentence }) {
 
   if (rows.length >= BATCH_SIZE) {
     const saved = await flushBatch();
-    return out.lesson + `\n\n🚨 Batch complete (${BATCH_SIZE}/${BATCH_SIZE})! Auto-saving…\n` + saved;
+    return { text: out.lesson + `\n\n🚨 Batch complete (${BATCH_SIZE}/${BATCH_SIZE})! Auto-saving…\n` + saved + hint, buttons };
   }
-  return out.lesson + `\n\n[Batch ${rows.length}/${BATCH_SIZE}]`;
+  return { text: out.lesson + `\n\n[Batch ${rows.length}/${BATCH_SIZE}]` + hint, buttons };
+}
+
+// Swap the Chinese part of a stored definition, keeping (hanja) / [EN] intact
+function swapChinese(def, chinese) {
+  const m = (def || "").match(/^.*?(\([^)]*\))\s*\/\s*\[EN\]\s*(.*)$/);
+  return m ? `${chinese} ${m[1]} / [EN] ${m[2]}` : `${chinese} (---) / [EN] ${def || ""}`;
+}
+
+// Update a word's flashcard Chinese — in the pending batch if it's there,
+// otherwise in the committed session CSVs (newest first).
+async function applyDefinition(word, chinese) {
+  if (process.env.GIST_ID) {
+    const batch = await readGistFile(BATCH_FILE);
+    const rows = batch.rows || [];
+    const r = rows.find((x) => x.word === word);
+    if (r) {
+      r.definition = swapChinese(r.definition, chinese);
+      await writeGistFile(BATCH_FILE, batch);
+      return `${word} → ${chinese} ✓ (in current batch)`;
+    }
+  }
+  const manifest = JSON.parse(await githubRaw("sessions.json"));
+  const csvEscape = (s) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  for (const entry of [...manifest].reverse()) {
+    const rows = parseCSV(await githubRaw(entry.file));
+    const idx = rows.findIndex((r, i) => i > 0 && (r[0] || "").trim() === word);
+    if (idx > 0) {
+      rows[idx][1] = swapChinese(rows[idx][1], chinese);
+      const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+      await ghPut(entry.file, csv, `Bot: set ${word} 中文 to ${chinese}`);
+      return `${word} → ${chinese} ✓ (updated in ${entry.label}; app refreshes in ~1 min)`;
+    }
+  }
+  return `Couldn't find ${word} in the batch or any session.`;
 }
 
 async function batchStatus() {
@@ -518,10 +588,12 @@ async function sendTelegram(chatId, text, opts = {}) {
     });
   for (let i = 0; i < text.length; i += 4000) {
     const chunk = text.slice(i, i + 4000);
-    let r = await post({ chat_id: chatId, text: chunk, ...(opts.html ? { parse_mode: "HTML" } : {}) });
+    // Inline buttons (e.g. Chinese-gloss choices) attach to the last chunk only
+    const markup = opts.buttons && i + 4000 >= text.length ? { reply_markup: { inline_keyboard: opts.buttons } } : {};
+    let r = await post({ chat_id: chatId, text: chunk, ...markup, ...(opts.html ? { parse_mode: "HTML" } : {}) });
     if (!r.ok && opts.html) {
       // Model produced invalid HTML (or a tag got split across chunks) — strip tags, send plain
-      r = await post({ chat_id: chatId, text: chunk.replace(/<\/?(b|i|u|s|code|pre)>/gi, "") });
+      r = await post({ chat_id: chatId, text: chunk.replace(/<\/?(b|i|u|s|code|pre)>/gi, ""), ...markup });
     }
     if (!r.ok) throw new Error(`Telegram send: ${r.status}`);
   }
