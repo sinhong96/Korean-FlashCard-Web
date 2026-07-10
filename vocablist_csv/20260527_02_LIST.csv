@@ -1,16 +1,16 @@
-Word,Definition,Sentence
-야금야금,"蚕食地、一点一点地 / [EN] bit by bit, little by little, nibbling","레버리지 상품은 횡보장에서 가만히 들고만 있어서도 원금이 야금야금 깎여 나가는 구조이다. (杠杆产品是在横盘整理的市场中, 哪怕只是静静地持有, 本金也会被一点一点蚕食的结构。)"
-신뢰자산,"信任资产 / [EN] trust asset, credibility asset, social capital","약속을 잘 지키는 사소한 습관이 결국 사회 생활에서 가장 큰 신뢰자산이 된다. (守约的小习惯最终会成为社会生活中最大的信任资产。)"
-대만불사,"台湾不死 (特指台积电股票绝不跌落的模因) / [EN] 'Taiwan never dies' (TSMC's stock market resilience)","엔비디아가 흔들려도 대만불사 믿고 TSMC는 계속 들고 간다. (即便英伟达动摇, 我也坚信‘台湾不死’, 会一直持有台积电。)"
-위기 후반 반등,"危机后期反弹 / [EN] late-crisis rebound, post-crisis recovery, late-stage rally","금리 인하 정책 덕분에 시장이 마침내 위기 후반 반등 국면에 접어들었다. (多亏了降息政策, 市场终于进入了危机后期反弹阶段。)"
-비툴,"歪曲、扭曲 (비틂 / 歪曲) / [EN] distortion, twisting","이 기억이 비틂을 정당화시키는 요인으로 작용합니다. (这个记忆起到了将歪曲(现状)正当化的因素作用。)"
-현찰,"现钞, 现金 (現札) / [EN] cash, cold hard cash","주식 대박 나서 부모님께 드릴 효도 용돈 현찰 인증합니다! (股票大赚, 晒一下给父母的孝心红包现钞认证！)"
-받은 대로 돌려준다,"以牙还牙、投桃报李 (照原样还回去) / [EN] to give back as good as one gets, to pay back in kind","친구가 힘들 때 도와줬으니, 나도 친구가 어려울 때 받은 대로 돌려주고 싶다. (朋友在我困难时帮过我, 所以当朋友遇到困难时, 我也想投桃报李照原样还回去。)"
-임금교섭,"工资谈判 (賃金交涉) / [EN] wage bargaining, wage negotiation","올해 임금교섭은 기본급 인상률을 두고 노사 간의 의견 차이가 커서 난항이 예상된다. (今年的工资谈判在基本薪资涨幅上劳资双方分歧较大, 预计将陷入僵局。)"
-방점,"重点, 侧重点 (傍點) / [EN] emphasis, focus, stress","방점을 두고 접근하시는 게 필요하다. (有必要把重点放在这上面来切入。)"
-투자는 타이밍의 예술,"投资是时机的艺术 / [EN] Investing is the art of timing.","욕심을 버리고 적당한 고점에서 익절하는 걸 보니, 투자는 타이밍의 예술이라는 말이 딱 맞다. (戒掉贪婪并在合适的高位止盈, ‘投资是时机的艺术’这句话说得一点没错。)"
-묻어두다,"搁置, 存着不动 / [EN] to leave untouched, to set and forget","평소처럼 묻어두고 잊어버리는 장기 투자자라면 (如果是一如既往地存着不动并忘掉的长期投资者的话)"
-낭패,"狼狈, 糟糕 (狼狽) / [EN] fiasco, failure, plight, predicament","본전도 못 찾는 낭패로 이어질 수 있습니다. (可能会导致连本金都捞不回来的狼狈局面。)"
-틀어지다,"出岔子, 搞砸, 关系闹掰 / [EN] to go wrong, to go awry, to fall through","뜨거운 가슴보다 상황이 틀어졌을 때 내 계좌가 얼마나 다칠지를 먼저 계산하다 (比起滚烫的热血, 先计算当情况出岔子时我的账户会受多大的伤)"
-경영권을 회수하다,"收回经营权 (經營權 回收) / [EN] to reclaim management control, to take back operational control","회사가 적자 수렁에 빠지자, 은퇴했던 창업주가 복귀하여 경영권을 회수했다. (随着公司陷入赤字泥潭, 隐退的创始人宣布复出并收回了经营权。)"
-엇갈리다,"不一致, 出现分歧 / [EN] to diverge, to be divided (opinions), to clash","이 부분에 대해서는 전문가들의 의견도 엇갈립니다. (关于这 border, 专家们的意见也出现了分歧。)"
+Word,Definition,Sentence,Pronunciation
+야금야금,"蚕食地、一点一点地 / [EN] bit by bit, little by little, nibbling","레버리지 상품은 횡보장에서 가만히 들고만 있어서도 원금이 야금야금 깎여 나가는 구조이다. (杠杆产品是在横盘整理的市场中, 哪怕只是静静地持有, 本金也会被一点一点蚕食的结构。)",야금냐금
+신뢰자산,"信任资产 / [EN] trust asset, credibility asset, social capital",약속을 잘 지키는 사소한 습관이 결국 사회 생활에서 가장 큰 신뢰자산이 된다. (守约的小习惯最终会成为社会生活中最大的信任资产。),실뢰자산
+대만불사,台湾不死 (特指台积电股票绝不跌落的模因) / [EN] 'Taiwan never dies' (TSMC's stock market resilience),"엔비디아가 흔들려도 대만불사 믿고 TSMC는 계속 들고 간다. (即便英伟达动摇, 我也坚信‘台湾不死’, 会一直持有台积电。)",
+위기 후반 반등,"危机后期反弹 / [EN] late-crisis rebound, post-crisis recovery, late-stage rally","금리 인하 정책 덕분에 시장이 마침내 위기 후반 반등 국면에 접어들었다. (多亏了降息政策, 市场终于进入了危机后期反弹阶段。)",
+비툴,"歪曲、扭曲 (비틂 / 歪曲) / [EN] distortion, twisting",이 기억이 비틂을 정당화시키는 요인으로 작용합니다. (这个记忆起到了将歪曲(现状)正当化的因素作用。),
+현찰,"现钞, 现金 (現札) / [EN] cash, cold hard cash","주식 대박 나서 부모님께 드릴 효도 용돈 현찰 인증합니다! (股票大赚, 晒一下给父母的孝心红包现钞认证！)",
+받은 대로 돌려준다,"以牙还牙、投桃报李 (照原样还回去) / [EN] to give back as good as one gets, to pay back in kind","친구가 힘들 때 도와줬으니, 나도 친구가 어려울 때 받은 대로 돌려주고 싶다. (朋友在我困难时帮过我, 所以当朋友遇到困难时, 我也想投桃报李照原样还回去。)",바든 대로 돌려준다
+임금교섭,"工资谈判 (賃金交涉) / [EN] wage bargaining, wage negotiation","올해 임금교섭은 기본급 인상률을 두고 노사 간의 의견 차이가 커서 난항이 예상된다. (今年的工资谈判在基本薪资涨幅上劳资双方分歧较大, 预计将陷入僵局。)",
+방점,"重点, 侧重点 (傍點) / [EN] emphasis, focus, stress",방점을 두고 접근하시는 게 필요하다. (有必要把重点放在这上面来切入。),방쩜
+투자는 타이밍의 예술,投资是时机的艺术 / [EN] Investing is the art of timing.,"욕심을 버리고 적당한 고점에서 익절하는 걸 보니, 투자는 타이밍의 예술이라는 말이 딱 맞다. (戒掉贪婪并在合适的高位止盈, ‘投资是时机的艺术’这句话说得一点没错。)",
+묻어두다,"搁置, 存着不动 / [EN] to leave untouched, to set and forget",평소처럼 묻어두고 잊어버리는 장기 투자자라면 (如果是一如既往地存着不动并忘掉的长期投资者的话),무더두다
+낭패,"狼狈, 糟糕 (狼狽) / [EN] fiasco, failure, plight, predicament",본전도 못 찾는 낭패로 이어질 수 있습니다. (可能会导致连本金都捞不回来的狼狈局面。),
+틀어지다,"出岔子, 搞砸, 关系闹掰 / [EN] to go wrong, to go awry, to fall through","뜨거운 가슴보다 상황이 틀어졌을 때 내 계좌가 얼마나 다칠지를 먼저 계산하다 (比起滚烫的热血, 先计算当情况出岔子时我的账户会受多大的伤)",트러지다
+경영권을 회수하다,"收回经营权 (經營權 回收) / [EN] to reclaim management control, to take back operational control","회사가 적자 수렁에 빠지자, 은퇴했던 창업주가 복귀하여 경영권을 회수했다. (随着公司陷入赤字泥潭, 隐退的创始人宣布复出并收回了经营权。)",경영꿔늘 회수하다
+엇갈리다,"不一致, 出现分歧 / [EN] to diverge, to be divided (opinions), to clash","이 부분에 대해서는 전문가들의 의견도 엇갈립니다. (关于这 border, 专家们的意见也出现了分歧。)",얻깔리다
