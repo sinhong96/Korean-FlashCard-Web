@@ -148,7 +148,7 @@ async function loadVocab() {
       const rows = parseCSV(await githubRaw(entry.file)).slice(1); // drop header
       for (const r of rows) {
         if (r[0] && r[0].trim()) {
-          all.push({ word: r[0].trim(), definition: r[1] || "", sentence: r[2] || "", session: entry.label });
+          all.push({ word: r[0].trim(), definition: r[1] || "", sentence: r[2] || "", pron: r[3] || "", session: entry.label });
         }
       }
     })
@@ -179,7 +179,14 @@ async function claude(system, userText, outputSchema, opts = {}) {
   const data = await r.json();
   if (data.stop_reason === "refusal") throw new Error("Claude declined the request");
   const textBlock = data.content.find((b) => b.type === "text");
-  return textBlock ? textBlock.text : "";
+  const text = textBlock ? textBlock.text : "";
+  // Structured-output calls must yield complete JSON — fail loud, not with a
+  // cryptic "Unexpected end of JSON input" downstream
+  if (outputSchema) {
+    if (data.stop_reason === "max_tokens") throw new Error("Claude response hit the token limit — try again");
+    if (!text.trim()) throw new Error(`Claude returned no text (stop: ${data.stop_reason})`);
+  }
+  return text;
 }
 
 // ---------- features ----------
@@ -282,27 +289,23 @@ async function handleCallback(cq) {
     const answer = word.slice(p + 1);
     let followUp = "";
     if (!ok) {
-      try {
-        const { all } = await loadVocab();
-        const v = all.find((x) => x.word === answer);
-        if (v) followUp = `❌ 정답: ${answer}\n${v.definition}\n${v.sentence}`;
-        if (process.env.GIST_ID) {
-          const state = await readGist();
-          const e = state[answer] || { count: 0, lastSent: null };
-          e.def = v ? v.definition : e.def || "";
-          e.sentence = v ? v.sentence : e.sentence || "";
-          e.count = (e.count || 0) + 1;
-          e.forgotAt = new Date().toISOString();
-          state[answer] = e;
-          await writeGist(state);
-        }
-      } catch (err) { console.error("quiz grade", err.message); }
+      try { followUp = `❌ 정답: ${await forgotWord(answer)}`; } catch (err) { console.error("quiz grade", err.message); }
     }
     await answerCallback(cq.id, ok ? `✅ 정답! ${answer}` : `❌ 정답: ${answer}`);
     if (cq.message) {
       await editMessage(cq.message.chat.id, cq.message.message_id, `${cq.message.text}\n\n${ok ? "✅" : "❌"} 정답: ${answer}`);
     }
-    if (followUp) await sendTelegram(cq.message.chat.id, followUp);
+    if (followUp && cq.message) await sendTelegram(cq.message.chat.id, followUp);
+    return;
+  }
+
+  // "w|word" — a /read target word tapped: reveal meaning + queue for review.
+  // Message is NOT edited, so the other word buttons stay tappable.
+  if (kind === "w") {
+    let msg;
+    try { msg = await forgotWord(word); } catch (e) { msg = "Lookup failed: " + e.message; }
+    await answerCallback(cq.id, `🔍 ${word}`);
+    if (cq.message) await sendTelegram(cq.message.chat.id, msg);
     return;
   }
 
@@ -354,6 +357,29 @@ async function editMessage(chatId, messageId, text) {
 // words first when the gist is on), then met in NEW contexts — fresh cloze
 // sentences for /quiz, fresh passages for /read.
 
+// He forgot this word: reveal its flashcard entry and (gist on) queue it for review
+async function forgotWord(word) {
+  const { all } = await loadVocab();
+  const v = all.find((x) => x.word === word);
+  if (v && process.env.GIST_ID) {
+    try {
+      const state = await readGist();
+      const e = state[word] || { count: 0, lastSent: null };
+      e.def = v.definition;
+      e.sentence = v.sentence;
+      e.count = (e.count || 0) + 1;
+      e.forgotAt = new Date().toISOString();
+      state[word] = e;
+      await writeGist(state);
+    } catch (err) { console.error("weak add", err.message); }
+  }
+  if (!v) return `${word} — not in your flashcards.`;
+  return (
+    `${v.word}${v.pron ? ` [${v.pron}]` : ""}\n${v.definition}\n${v.sentence}` +
+    (process.env.GIST_ID ? "\n\n🔁 Added to your review queue." : "")
+  );
+}
+
 async function pickStudyWords(all, n, maxLen = Infinity) {
   const pool = all.filter((v) => v.word.length <= maxLen);
   let picks = [];
@@ -396,14 +422,15 @@ const QUIZ_SYSTEM =
   "IMPORTANT: questions contain NO Chinese and no definitions — recognizing the word from " +
   "Korean context alone is the exercise. 'answer' is the flashcard word exactly as given. " +
   "'options' are 4 choices: the answer plus 3 distractors, preferring OTHER words from his " +
-  "list (same part of speech where possible).";
+  "list (same part of speech where possible). Output exactly one question per given word — " +
+  "no more — and keep sentences under 60 Korean characters.";
 
 async function quiz(chatId) {
   const { all } = await loadVocab();
   const picks = await pickStudyWords(all, 5, 18); // callback_data caps word length
   if (picks.length < 4) return "Not enough vocab for a quiz yet.";
   const list = picks.map((m) => `- ${m.word} | ${m.definition} | flashcard sentence: ${m.sentence}`).join("\n");
-  const gen = await claude(QUIZ_SYSTEM, `His words:\n${list}`, QUIZ_SCHEMA, { model: LESSON_MODEL, maxTokens: 3000 });
+  const gen = await claude(QUIZ_SYSTEM, `His words:\n${list}`, QUIZ_SCHEMA, { model: LESSON_MODEL, maxTokens: 5000 });
   const qs = JSON.parse(gen).questions.slice(0, 5);
   await sendTelegram(chatId, `🧠 Context quiz — ${qs.length} blanks, new sentences. Tap your answer; misses go to your review queue.`);
   for (let i = 0; i < qs.length; i++) {
@@ -455,7 +482,18 @@ async function readingPractice() {
   } catch (e) {
     console.error("readings.json", e.message);
   }
-  return { text: `📖 <b>${out.title}</b>\n\n${out.passage}\n\n— target words: ${words.join(", ")}${note}` };
+  // One button per target word: tap what you forgot → meaning + review queue
+  const btns = words
+    .filter((w) => Buffer.byteLength(`w|${w}`, "utf8") <= 64)
+    .map((w) => ({ text: w, callback_data: `w|${w}` }));
+  const buttons = [];
+  for (let i = 0; i < btns.length; i += 3) buttons.push(btns.slice(i, i + 3));
+  return {
+    text:
+      `📖 <b>${out.title}</b>\n\n${out.passage}\n\n` +
+      `🤔 Forgot any of the bold words? Tap it below — meaning now, review queue later.${note}`,
+    buttons: buttons.length ? buttons : undefined,
+  };
 }
 
 // ---------- vocab lessons: structured teacher reply + batched CSV rows ----------
