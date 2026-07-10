@@ -166,15 +166,22 @@ async function claude(system, userText, outputSchema, opts = {}) {
     messages: [{ role: "user", content: userText }],
   };
   if (outputSchema) body.output_config = { format: { type: "json_schema", schema: outputSchema } };
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  // Overloaded (529) / rate-limited (429) / 5xx are transient — retry with backoff
+  let r;
+  for (let attempt = 0; ; attempt++) {
+    r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (r.ok || attempt >= 2 || (r.status < 429 && r.status !== 408)) break;
+    await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
+  }
+  if (r.status === 529) throw new Error("Anthropic's API is overloaded right now — try again in a minute 🙏");
   if (!r.ok) throw new Error(`Claude API ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const data = await r.json();
   if (data.stop_reason === "refusal") throw new Error("Claude declined the request");
