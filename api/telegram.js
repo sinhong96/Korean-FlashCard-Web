@@ -55,6 +55,7 @@ module.exports = async (req, res) => {
 
   try {
     let reply;
+    let html = false; // lessons use Telegram HTML formatting; everything else stays plain
     const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
     const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
     const lessonMatch = parseLessonRequest(text);
@@ -76,10 +77,11 @@ module.exports = async (req, res) => {
       reply = await batchStatus();
     } else if (lessonMatch) {
       reply = await vocabLesson(lessonMatch);
+      html = true;
     } else {
       reply = await recallCheck(text);
     }
-    await sendTelegram(chatId, reply);
+    await sendTelegram(chatId, reply, { html });
   } catch (err) {
     console.error(err);
     await sendTelegram(chatId, "Something went wrong: " + err.message).catch(() => {});
@@ -328,8 +330,12 @@ const LESSON_SCHEMA = {
 };
 
 const LESSON_SYSTEM =
-  "You are Sin Hong's expert, witty Korean teacher, replying inside Telegram — plain text only, " +
-  "no markdown syntax (no ##, no **). He is a Chinese speaker learning Korean.\n\n" +
+  "You are Sin Hong's expert, witty Korean teacher, replying inside Telegram. He is a Chinese " +
+  "speaker learning Korean.\n\n" +
+  "Formatting: the lesson is sent with Telegram HTML parse mode. No markdown (no ##, no **). " +
+  "The ONLY tags allowed are <b> and <i>: wrap the target word and 2-4 genuinely key terms in " +
+  "<b>…</b>, and Korean example sentences in <i>…</i>. Never use other tags, and write any " +
+  "literal &, < or > as &amp;, &lt;, &gt;.\n\n" +
   "Given a Korean word (and optionally a context sentence he met it in), return JSON with:\n\n" +
   '"lesson" — a lesson in exactly this layout:\n\n' +
   "'단어'는 [brief, clear definition in Korean].\n" +
@@ -351,8 +357,14 @@ const LESSON_SYSTEM =
   "[A question in Korean prompting him to practice the word.]\n" +
   '(예: "[sample answer]")\n\n' +
   'Keep the lesson under 3000 characters.\n\n' +
-  '"word" — the target Korean word/phrase only.\n' +
-  '"definition" — exactly this format: 现代中文核心解释 (原生韩文汉字放括号内, 没有就写 ---) / [EN] Brief English definition\n' +
+  '"word" — the target Korean word/phrase only. No HTML in word/definition/sentence.\n' +
+  '"definition" — Chinese meaning(s), then the word\'s hanja in parentheses (--- if the word has ' +
+  "no hanja; use - for each non-hanja syllable), then / [EN] and a brief English definition. " +
+  "Write ONLY real content — NEVER copy template labels such as 现代中文核心解释 or 原生韩文汉字 " +
+  "into the output. Match these examples exactly in style:\n" +
+  "结实 / 饱满 / 扎实 (---) / [EN] Solid, sturdy, robust\n" +
+  "教区长 (敎區長) / [EN] Bishop of a diocese\n" +
+  "毫不留情地 / 无情地 (事情--) / [EN] Mercilessly, without regard for circumstances\n" +
   '"sentence" — one natural Korean example sentence followed by its Chinese translation in parentheses. ' +
   "If he gave a context sentence, prefer it (cleaned up / completed) as the example.";
 
@@ -496,14 +508,21 @@ async function ghPut(path, content, message) {
 
 // ---------- Telegram ----------
 
-async function sendTelegram(chatId, text) {
+async function sendTelegram(chatId, text, opts = {}) {
   // Telegram messages cap at 4096 chars
-  for (let i = 0; i < text.length; i += 4000) {
-    const r = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const post = (payload) =>
+    fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: text.slice(i, i + 4000) }),
+      body: JSON.stringify(payload),
     });
+  for (let i = 0; i < text.length; i += 4000) {
+    const chunk = text.slice(i, i + 4000);
+    let r = await post({ chat_id: chatId, text: chunk, ...(opts.html ? { parse_mode: "HTML" } : {}) });
+    if (!r.ok && opts.html) {
+      // Model produced invalid HTML (or a tag got split across chunks) — strip tags, send plain
+      r = await post({ chat_id: chatId, text: chunk.replace(/<\/?(b|i|u|s|code|pre)>/gi, "") });
+    }
     if (!r.ok) throw new Error(`Telegram send: ${r.status}`);
   }
 }
