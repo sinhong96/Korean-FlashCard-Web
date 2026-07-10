@@ -69,7 +69,10 @@ module.exports = async (req, res) => {
     } else if (/^\/?related\b/i.test(text)) {
       reply = "Usage: /related 단어 — I'll find words you've already learned that connect to it.";
     } else if (/^\/?(quiz|test)( me)?\b/i.test(text)) {
-      reply = await quiz();
+      reply = await quiz(chatId);
+    } else if (/^\/read\b/i.test(text)) {
+      reply = await readingPractice();
+      html = true;
     } else if (/^\/weak\b/i.test(text)) {
       reply = await weakWords();
     } else if (/^\/csv\b/i.test(text)) {
@@ -87,7 +90,7 @@ module.exports = async (req, res) => {
       reply = await recallCheck(text);
     }
     const payload = typeof reply === "string" ? { text: reply } : reply;
-    await sendTelegram(chatId, payload.text, { html, buttons: payload.buttons });
+    if (payload.text) await sendTelegram(chatId, payload.text, { html, buttons: payload.buttons });
   } catch (err) {
     console.error(err);
     await sendTelegram(chatId, "Something went wrong: " + err.message).catch(() => {});
@@ -187,7 +190,9 @@ const TUTOR_SYSTEM =
   "Keep replies short and plain text (no markdown). When his own flashcard entry is " +
   "provided, base your answer on it and mention which session it came from. If he " +
   "guesses a meaning, say clearly whether he is right or wrong, then give the correct " +
-  "meaning and the example sentence.";
+  "meaning and the example sentence. When he asks a meaning WITHOUT guessing first, nudge " +
+  "recall before revealing: give the Korean example sentence or a Korean/English hint first, " +
+  "then the full answer (with Chinese) below it.";
 
 async function recallCheck(question) {
   const { all } = await loadVocab();
@@ -216,7 +221,8 @@ function helpText() {
     "• Just ask, e.g. \"what does 밥값 mean?\" or guess a meaning and I'll check you\n" +
     "• /related 단어 — words you've already learned that connect to this one\n" +
     "• /weak — the words you keep asking about (your weak spots)\n" +
-    "• /quiz — a quick 5-question drill from your vocab\n" +
+    "• /quiz — 5 fill-in-the-blank questions, new sentences, tap to answer (misses → review queue)\n" +
+    "• /read — a fresh Korean passage woven from your vocab (also saved to the app with TTS)\n" +
     "• /add 단어1, 단어2 — add new words to your flashcard app from here"
   );
 }
@@ -269,6 +275,37 @@ async function handleCallback(cq) {
   const kind = data.slice(0, sep);
   const word = data.slice(sep + 1);
 
+  // "q|1/0|answer" — a context-quiz answer tapped; misses feed the review queue
+  if (kind === "q") {
+    const p = word.indexOf("|");
+    const ok = word.slice(0, p) === "1";
+    const answer = word.slice(p + 1);
+    let followUp = "";
+    if (!ok) {
+      try {
+        const { all } = await loadVocab();
+        const v = all.find((x) => x.word === answer);
+        if (v) followUp = `❌ 정답: ${answer}\n${v.definition}\n${v.sentence}`;
+        if (process.env.GIST_ID) {
+          const state = await readGist();
+          const e = state[answer] || { count: 0, lastSent: null };
+          e.def = v ? v.definition : e.def || "";
+          e.sentence = v ? v.sentence : e.sentence || "";
+          e.count = (e.count || 0) + 1;
+          e.forgotAt = new Date().toISOString();
+          state[answer] = e;
+          await writeGist(state);
+        }
+      } catch (err) { console.error("quiz grade", err.message); }
+    }
+    await answerCallback(cq.id, ok ? `✅ 정답! ${answer}` : `❌ 정답: ${answer}`);
+    if (cq.message) {
+      await editMessage(cq.message.chat.id, cq.message.message_id, `${cq.message.text}\n\n${ok ? "✅" : "❌"} 정답: ${answer}`);
+    }
+    if (followUp) await sendTelegram(cq.message.chat.id, followUp);
+    return;
+  }
+
   // "d|단어|中文" — a Chinese-gloss choice tapped under a lesson
   if (kind === "d") {
     const p = word.indexOf("|");
@@ -312,14 +349,113 @@ async function editMessage(chatId, messageId, text) {
   });
 }
 
-async function quiz() {
+// ---------- context practice: scrambled cross-session words ----------
+// Anti position-memory: words are sampled across ALL sessions (weak-queue
+// words first when the gist is on), then met in NEW contexts — fresh cloze
+// sentences for /quiz, fresh passages for /read.
+
+async function pickStudyWords(all, n, maxLen = Infinity) {
+  const pool = all.filter((v) => v.word.length <= maxLen);
+  let picks = [];
+  if (process.env.GIST_ID) {
+    try {
+      const weak = Object.keys(await readGist());
+      picks = pool.filter((v) => weak.includes(v.word)).sort(() => Math.random() - 0.5).slice(0, Math.ceil(n / 2));
+    } catch {}
+  }
+  const rest = pool.filter((v) => !picks.includes(v)).sort(() => Math.random() - 0.5);
+  return picks.concat(rest).slice(0, n);
+}
+
+const QUIZ_SCHEMA = {
+  type: "object",
+  properties: {
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          answer: { type: "string" },
+          options: { type: "array", items: { type: "string" } },
+        },
+        required: ["question", "answer", "options"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["questions"],
+  additionalProperties: false,
+};
+
+const QUIZ_SYSTEM =
+  "You write Korean vocab quizzes for Sin Hong (TOPIK 3-4 level). For each flashcard word " +
+  "given, create ONE cloze question: a natural NEW Korean sentence — a different situation " +
+  "from the flashcard's example sentence — with the target word replaced by ____. If the word " +
+  "would be conjugated, keep the blank as ____ and put the needed ending outside it. " +
+  "IMPORTANT: questions contain NO Chinese and no definitions — recognizing the word from " +
+  "Korean context alone is the exercise. 'answer' is the flashcard word exactly as given. " +
+  "'options' are 4 choices: the answer plus 3 distractors, preferring OTHER words from his " +
+  "list (same part of speech where possible).";
+
+async function quiz(chatId) {
   const { all } = await loadVocab();
-  const picks = all.sort(() => Math.random() - 0.5).slice(0, 5);
-  const list = picks.map((m) => `- ${m.word} | ${m.definition}`).join("\n");
-  return claude(
-    TUTOR_SYSTEM,
-    `Make a quick 5-question recall quiz from these words (ask meaning or usage, mix directions KR->EN and EN->KR). Put the answer key at the bottom.\n${list}`
-  );
+  const picks = await pickStudyWords(all, 5, 18); // callback_data caps word length
+  if (picks.length < 4) return "Not enough vocab for a quiz yet.";
+  const list = picks.map((m) => `- ${m.word} | ${m.definition} | flashcard sentence: ${m.sentence}`).join("\n");
+  const gen = await claude(QUIZ_SYSTEM, `His words:\n${list}`, QUIZ_SCHEMA, { model: LESSON_MODEL, maxTokens: 3000 });
+  const qs = JSON.parse(gen).questions.slice(0, 5);
+  await sendTelegram(chatId, `🧠 Context quiz — ${qs.length} blanks, new sentences. Tap your answer; misses go to your review queue.`);
+  for (let i = 0; i < qs.length; i++) {
+    const q = qs[i];
+    let opts = [...new Set((q.options || []).concat(q.answer))].slice(0, 4);
+    if (!opts.includes(q.answer)) opts[0] = q.answer;
+    opts.sort(() => Math.random() - 0.5);
+    if (Buffer.byteLength(`q|0|${q.answer}`, "utf8") > 64) continue;
+    const btns = opts.map((o) => ({ text: o, callback_data: `q|${o === q.answer ? 1 : 0}|${q.answer}` }));
+    const rows = [btns.slice(0, 2), btns.slice(2)].filter((r) => r.length);
+    await sendTelegram(chatId, `${i + 1}. ${q.question}`, { buttons: rows });
+  }
+  return "";
+}
+
+const READ_SCHEMA = {
+  type: "object",
+  properties: { title: { type: "string" }, passage: { type: "string" } },
+  required: ["title", "passage"],
+  additionalProperties: false,
+};
+
+const READ_SYSTEM =
+  "You write short Korean reading passages for Sin Hong (Chinese speaker, TOPIK 3-4). Given " +
+  "target words from his flashcards, write ONE natural passage of 300-500 Korean characters — " +
+  "vary the genre (mini story, news brief, dialogue, diary entry) — that uses EVERY target " +
+  "word exactly once, each in a NEW context different from its flashcard sentence. Wrap each " +
+  "target word as it appears (conjugation ok) in <b></b>. NO Chinese, no translations, no word " +
+  "list — recognizing the words in fresh context IS the exercise. Only <b>/<i> tags; write " +
+  "literal &, <, > as &amp;, &lt;, &gt;. 'title': a short Korean title, no HTML.";
+
+async function readingPractice() {
+  const { all } = await loadVocab();
+  const picks = await pickStudyWords(all, 12);
+  if (picks.length < 4) return "Not enough vocab for a reading yet.";
+  const list = picks.map((m) => `- ${m.word} (${m.definition})`).join("\n");
+  const gen = await claude(READ_SYSTEM, `Target words:\n${list}`, READ_SCHEMA, { model: LESSON_MODEL, maxTokens: 3000 });
+  const out = JSON.parse(gen);
+  const words = picks.map((p) => p.word);
+
+  let note = "";
+  try {
+    let readings = [];
+    try { readings = JSON.parse(await githubRaw("readings.json")); } catch {}
+    const date = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date());
+    readings.unshift({ date, title: out.title, passage: out.passage, words });
+    await ghPut("readings.json", JSON.stringify(readings.slice(0, 30), null, 2) + "\n", "Bot: add reading");
+    note = "\n\n📚 Saved to the app's Readings (with TTS) — live in ~1 min.";
+  } catch (e) {
+    console.error("readings.json", e.message);
+  }
+  return { text: `📖 <b>${out.title}</b>\n\n${out.passage}\n\n— target words: ${words.join(", ")}${note}` };
 }
 
 // ---------- vocab lessons: structured teacher reply + batched CSV rows ----------
