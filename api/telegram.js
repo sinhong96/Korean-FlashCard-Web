@@ -23,11 +23,13 @@ const { readGist, writeGist, readGistFile, writeGistFile } = require("../lib/sto
 
 const REPO = "sinhong96/Korean-FlashCard-Web";
 const BRANCH = "main";
-const TIMEZONE = "Asia/Singapore";
+const TIMEZONE = "Asia/Seoul";
 const MODEL = "claude-haiku-4-5";
 const LESSON_MODEL = "claude-sonnet-5"; // lessons need nuance/wit; haiku stays for cheap tasks
 const BATCH_FILE = "vocab_batch.json";
 const BATCH_SIZE = 15;
+const USAGE_FILE = "usage.json";
+const DAILY_MESSAGE_CAP = 60; // backstop against runaway Claude cost; resets at midnight TIMEZONE
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(200).send("ok");
@@ -158,7 +160,22 @@ async function loadVocab() {
 
 // ---------- Claude API (raw fetch, no SDK) ----------
 
+// Daily backstop against runaway cost (bug, retry storm, abuse) — counts every
+// call that reaches this point, regardless of command. Degrades to "no cap"
+// if GIST_ID isn't configured, same as the other Gist-backed features.
+async function checkDailyCap() {
+  if (!process.env.GIST_ID) return;
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date());
+  const usage = await readGistFile(USAGE_FILE);
+  const count = usage.date === today ? usage.count || 0 : 0;
+  if (count >= DAILY_MESSAGE_CAP) {
+    throw new Error(`Daily Claude usage cap reached (${DAILY_MESSAGE_CAP}/day) — try again after midnight ${TIMEZONE}.`);
+  }
+  await writeGistFile(USAGE_FILE, { date: today, count: count + 1 });
+}
+
 async function claude(system, userText, outputSchema, opts = {}) {
+  await checkDailyCap();
   const body = {
     model: opts.model || MODEL,
     max_tokens: opts.maxTokens || 1500,
