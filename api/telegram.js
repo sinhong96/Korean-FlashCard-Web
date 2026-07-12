@@ -244,16 +244,28 @@ function helpText() {
 async function relatedWords(word) {
   const target = word.trim();
   const { all } = await loadVocab();
-  const vocabList = all.map((v) => `${v.word} = ${v.definition}`).join("\n");
+  // Full corpus grows unbounded as sessions pile up — same keyword/hanja overlap
+  // filter recallCheck() uses, capped, so this call's cost doesn't grow forever.
+  const hanjaChars = (target.match(/\p{Script=Han}/gu) || []).join("");
+  const candidates = all.filter(
+    (v) =>
+      v.word !== target &&
+      (v.word.includes(target) ||
+        target.includes(v.word) ||
+        v.definition.includes(target) ||
+        (hanjaChars && v.definition.includes(hanjaChars)))
+  ).slice(0, 50);
+  const pool = candidates.length ? candidates : all.slice(0, 50);
+  const vocabList = pool.map((v) => `${v.word} = ${v.definition}`).join("\n");
   const sys =
     "You help a Korean learner find connections between words he has already studied. " +
-    "Given a target word and his full vocab list, pick up to 6 words FROM HIS LIST that are " +
+    "Given a target word and a slice of his vocab list, pick up to 6 words FROM THE LIST that are " +
     "meaningfully related to the target — same theme, synonyms, antonyms, shared Hanja/root, or " +
-    "words commonly used together. Only choose words that actually appear in his list. For each, " +
+    "words commonly used together. Only choose words that actually appear in the list. For each, " +
     "give: the Korean word, a short English gloss, and a few words on how it relates to the target. " +
-    "Plain text, no markdown. If nothing in his list relates, say so plainly and suggest 2-3 new " +
+    "Plain text, no markdown. If nothing in the list relates, say so plainly and suggest 2-3 new " +
     "related words he could learn next (mark those clearly as 'not in your list yet').";
-  return claude(sys, `Target word: ${target}\n\nHis vocab list:\n${vocabList}`);
+  return claude(sys, `Target word: ${target}\n\nA slice of his vocab list:\n${vocabList}`);
 }
 
 // ---------- review queue (words marked 😢 Forgot in the flashcard app) ----------
@@ -437,7 +449,7 @@ async function quiz(chatId) {
   const picks = await pickStudyWords(all, 5, 18); // callback_data caps word length
   if (picks.length < 4) return "Not enough vocab for a quiz yet.";
   const list = picks.map((m) => `- ${m.word} | ${m.definition} | flashcard sentence: ${m.sentence}`).join("\n");
-  const gen = await claude(QUIZ_SYSTEM, `His words:\n${list}`, QUIZ_SCHEMA, { model: LESSON_MODEL, maxTokens: 5000 });
+  const gen = await claude(QUIZ_SYSTEM, `His words:\n${list}`, QUIZ_SCHEMA, { model: LESSON_MODEL, maxTokens: 7000 });
   const qs = JSON.parse(gen).questions.slice(0, 5);
   await sendTelegram(chatId, `🧠 Context quiz — ${qs.length} blanks, new sentences. Tap your answer; misses go to your review queue.`);
   for (let i = 0; i < qs.length; i++) {
@@ -474,7 +486,7 @@ async function readingPractice() {
   const picks = await pickStudyWords(all, 12);
   if (picks.length < 4) return "Not enough vocab for a reading yet.";
   const list = picks.map((m) => `- ${m.word} (${m.definition})`).join("\n");
-  const gen = await claude(READ_SYSTEM, `Target words:\n${list}`, READ_SCHEMA, { model: LESSON_MODEL, maxTokens: 3000 });
+  const gen = await claude(READ_SYSTEM, `Target words:\n${list}`, READ_SCHEMA, { model: LESSON_MODEL, maxTokens: 4500 });
   const out = JSON.parse(gen);
   const words = picks.map((p) => p.word);
 
@@ -580,7 +592,7 @@ const LESSON_SYSTEM =
 
 async function vocabLesson({ word, sentence }) {
   const userText = sentence ? `Word: ${word}\nContext sentence: ${sentence}` : `Word: ${word}`;
-  const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 4000 });
+  const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 6000 });
   const out = JSON.parse(gen);
   const options = (out.chinese_options || []).map((s) => s.trim()).filter(Boolean);
   const row = {
@@ -705,7 +717,8 @@ async function addWords(input) {
       "'저는 소년범을 혐오합니다. (我厌恶少年犯。)'. 'pronunciation' is the 표준 발음 in hangul, no " +
       "brackets (e.g. 대통령 -> 대ː통녕), and \"\" when it matches the spelling.",
     `Create flashcard entries for: ${input}`,
-    ENTRY_SCHEMA
+    ENTRY_SCHEMA,
+    { maxTokens: 3000 }
   );
   const entries = JSON.parse(gen).entries;
   if (!entries.length) return "No entries generated.";
