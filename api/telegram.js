@@ -56,43 +56,51 @@ module.exports = async (req, res) => {
   }
 
   try {
-    let reply;
-    let html = false; // lessons use Telegram HTML formatting; everything else stays plain
-    const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
-    const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
-    const defMatch = text.match(/^\/?def[:\s]+(\S+)\s+(.+)/is);
-    const lessonMatch = parseLessonRequest(text);
-    if (/^\/(start|help)\b/i.test(text)) {
-      reply = helpText();
-    } else if (addMatch) {
-      reply = await addWords(addMatch[1]);
-    } else if (relMatch) {
-      reply = await relatedWords(relMatch[1]);
-    } else if (/^\/?related\b/i.test(text)) {
-      reply = "Usage: /related 단어 — I'll find words you've already learned that connect to it.";
-    } else if (/^\/?(quiz|test)( me)?\b/i.test(text)) {
-      reply = await quiz(chatId);
-    } else if (/^\/read\b/i.test(text)) {
-      reply = await readingPractice();
-      html = true;
-    } else if (/^\/weak\b/i.test(text)) {
-      reply = await weakWords();
-    } else if (/^\/csv\b/i.test(text)) {
-      reply = await flushBatch();
-    } else if (/^\/batch\b/i.test(text)) {
-      reply = await batchStatus();
-    } else if (defMatch) {
-      reply = await applyDefinition(defMatch[1], defMatch[2].trim());
-    } else if (/^\/def\b/i.test(text)) {
-      reply = "Usage: /def 단어 你的词 — sets the Chinese shown on that word's flashcard.";
-    } else if (lessonMatch) {
-      reply = await vocabLesson(lessonMatch);
-      html = true;
-    } else {
-      reply = await recallCheck(text);
+    // Claude calls here can take 10-30s+ (non-streaming); keep Telegram's
+    // typing indicator alive (it fades after ~5s) so the wait isn't silent.
+    sendChatAction(chatId);
+    const typingTimer = setInterval(() => sendChatAction(chatId), 4000);
+    try {
+      let reply;
+      let html = false; // lessons use Telegram HTML formatting; everything else stays plain
+      const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
+      const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
+      const defMatch = text.match(/^\/?def[:\s]+(\S+)\s+(.+)/is);
+      const lessonMatch = parseLessonRequest(text);
+      if (/^\/(start|help)\b/i.test(text)) {
+        reply = helpText();
+      } else if (addMatch) {
+        reply = await addWords(addMatch[1]);
+      } else if (relMatch) {
+        reply = await relatedWords(relMatch[1]);
+      } else if (/^\/?related\b/i.test(text)) {
+        reply = "Usage: /related 단어 — I'll find words you've already learned that connect to it.";
+      } else if (/^\/?(quiz|test)( me)?\b/i.test(text)) {
+        reply = await quiz(chatId);
+      } else if (/^\/read\b/i.test(text)) {
+        reply = await readingPractice();
+        html = true;
+      } else if (/^\/weak\b/i.test(text)) {
+        reply = await weakWords();
+      } else if (/^\/csv\b/i.test(text)) {
+        reply = await flushBatch();
+      } else if (/^\/batch\b/i.test(text)) {
+        reply = await batchStatus();
+      } else if (defMatch) {
+        reply = await applyDefinition(defMatch[1], defMatch[2].trim());
+      } else if (/^\/def\b/i.test(text)) {
+        reply = "Usage: /def 단어 你的词 — sets the Chinese shown on that word's flashcard.";
+      } else if (lessonMatch) {
+        reply = await vocabLesson(lessonMatch);
+        html = true;
+      } else {
+        reply = await recallCheck(text);
+      }
+      const payload = typeof reply === "string" ? { text: reply } : reply;
+      if (payload.text) await sendTelegram(chatId, payload.text, { html, buttons: payload.buttons });
+    } finally {
+      clearInterval(typingTimer);
     }
-    const payload = typeof reply === "string" ? { text: reply } : reply;
-    if (payload.text) await sendTelegram(chatId, payload.text, { html, buttons: payload.buttons });
   } catch (err) {
     console.error(err);
     await sendTelegram(chatId, "Something went wrong: " + err.message).catch(() => {});
@@ -800,6 +808,15 @@ async function ghPut(path, content, message) {
 }
 
 // ---------- Telegram ----------
+
+// Fire-and-forget "typing…" indicator — not worth failing a reply over.
+function sendChatAction(chatId, action = "typing") {
+  return fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendChatAction`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, action }),
+  }).catch(() => {});
+}
 
 async function sendTelegram(chatId, text, opts = {}) {
   // Telegram messages cap at 4096 chars
