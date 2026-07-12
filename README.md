@@ -50,3 +50,18 @@ Plain HTML, CSS, and JavaScript — no frameworks, no build step. Deployable as 
 ## Deployment
 
 Hosted on [Vercel](https://vercel.com) via GitHub integration. Every push to `main` triggers an automatic redeploy.
+
+## How this repo's memory works
+
+This repo carries its own context for AI coding sessions (Claude Code) in four Markdown files:
+
+| File | Holds | Question it answers |
+|------|-------|--------------------|
+| `CLAUDE.md` | Rules & working style | *How* do we work here? |
+| `Wiki.md` | Architecture, APIs, terms | *What* is always true? |
+| `Memory.md` | Current progress & next step | *Where* did we leave off? |
+| `Learning.md` | Bugs & pitfalls, with fixes | *What* went wrong before? |
+
+`CLAUDE.md` loads automatically and tells the assistant to read the others at the start of a
+session and update `Memory.md` / `Learning.md` at the end — so context survives across chats
+instead of being re-explained each time.
