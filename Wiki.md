@@ -34,7 +34,7 @@ Browser (index.html)  ──Forgot/Got-it taps──►  api/sync.js  ──► 
 | `api/telegram.js` | Telegram webhook. Lessons, `/batch`, `/csv`, quiz, recall check, `add:`. Auto-commits a session CSV when the lesson batch hits 15/15. |
 | `api/sync.js` | Public endpoint. Browser posts `forgot`/`remove`; updates the Gist review queue. |
 | `api/daily.js` | Cron-triggered morning push (up to 10 words, never-sent first). Manual GET works for testing. |
-| `lib/store.js` | Shared Gist read/write (`weak_words.json`, `vocab_batch.json`, …). All per-tap state goes here, never the repo. |
+| `lib/store.js` | Shared Gist read/write (`weak_words.json`, `vocab_batch.json`, `pending.json`, …). All per-tap state goes here, never the repo. |
 | `ingest.py` | Local pipeline for ingesting word data (see file for details). |
 | `graphify-out/` | Knowledge-graph output of the project (from the graphify skill). |
 
@@ -75,3 +75,5 @@ Word,Definition,Sentence
 - **Review queue / weak words** — words you marked *Forgot*; stored in the Gist, drip-fed by the daily push.
 - **Batch** — an in-progress set of ≤15 lesson words in the Gist; flushes to a CSV session at 15 or via `/csv`.
 - **SM-2** — the spaced-repetition scheduling algorithm the front end uses.
+- **Pending state** — a short-lived (5 min) per-chat "waiting for your next message" marker in `pending.json`
+  (the Gist), used so a bare `/def` can ask a follow-up question instead of erroring. See Learning.md.

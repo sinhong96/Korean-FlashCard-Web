@@ -33,3 +33,13 @@ These are lessons the current code encodes — read them before "improving" thin
 
 ## New lessons (add below as you hit them)
 <!-- Problem → Cause → Fix/Rule -->
+
+- **Tapping a command from Telegram's "/" suggestion menu sends it immediately** — it
+  doesn't just pre-fill the input box for you to keep typing.
+  → Cause: Telegram client behavior, not something the bot controls. Any command that
+  needs inline args (like the old `/def 단어 你的词`) breaks when invoked via tap.
+  → Fix/Rule: for arg-taking commands, park a short-lived "pending" state per chat in the
+  Gist (`pending.json`, via `lib/store.js`) when the bare command arrives, prompt for the
+  missing piece, and treat the user's next non-slash message as the answer. See `/def` in
+  `api/telegram.js` (`getPending`/`setPending`/`resolveDefPending`) for the pattern —
+  reuse it for any future command that needs args.

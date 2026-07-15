@@ -30,6 +30,8 @@ const BATCH_FILE = "vocab_batch.json";
 const BATCH_SIZE = 15;
 const USAGE_FILE = "usage.json";
 const DAILY_MESSAGE_CAP = 60; // backstop against runaway Claude cost; resets at midnight TIMEZONE
+const PENDING_FILE = "pending.json";
+const PENDING_TTL_MS = 5 * 60 * 1000; // /def waits this long for the follow-up word before giving up
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(200).send("ok");
@@ -67,7 +69,16 @@ module.exports = async (req, res) => {
       const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
       const defMatch = text.match(/^\/?def[:\s]+(\S+)\s+(.+)/is);
       const lessonMatch = parseLessonRequest(text);
-      if (/^\/(start|help)\b/i.test(text)) {
+      // Tapping /def from Telegram's "/" suggestion menu sends it immediately, with no
+      // chance to type args first — so bare /def instead parks a pending state in the
+      // Gist and treats the user's very next (non-slash) message as the missing args.
+      const pending = !/^\//.test(text) ? await getPending(chatId) : null;
+      // A different command interrupting a parked /def means the user moved on —
+      // drop the stale pending state so it doesn't hijack a later unrelated message.
+      if (/^\//.test(text) && !/^\/def\b/i.test(text)) await setPending(chatId, null);
+      if (pending && pending.command === "def") {
+        reply = await resolveDefPending(pending, text, chatId);
+      } else if (/^\/(start|help)\b/i.test(text)) {
         reply = helpText();
       } else if (addMatch) {
         reply = await addWords(addMatch[1]);
@@ -89,7 +100,12 @@ module.exports = async (req, res) => {
       } else if (defMatch) {
         reply = await applyDefinition(defMatch[1], defMatch[2].trim());
       } else if (/^\/def\b/i.test(text)) {
-        reply = "Usage: /def 단어 你的词 — sets the Chinese shown on that word's flashcard.";
+        const wordOnly = text.match(/^\/def\s+(\S+)\s*$/i);
+        const word = wordOnly ? wordOnly[1] : null;
+        await setPending(chatId, { command: "def", word, expiresAt: Date.now() + PENDING_TTL_MS });
+        reply = word
+          ? `What should ${word}'s Chinese say? Send just the word.`
+          : "Which word, and what should the Chinese say? Send: 단어 你的词";
       } else if (lessonMatch) {
         reply = await vocabLesson(lessonMatch);
         html = true;
@@ -256,7 +272,7 @@ function helpText() {
     "joins your current batch and auto-saves to the flashcard app at 15/15\n" +
     "• /batch — see the current lesson batch\n" +
     "• /csv — save the batch to a CSV session right now\n" +
-    "• /def 단어 你的词 — change the Chinese shown on that word's flashcard\n" +
+    "• /def 단어 你的词 — change the Chinese shown on that word's flashcard (tap /def alone and I'll ask for the word)\n" +
     "• Just ask, e.g. \"what does 밥값 mean?\" or guess a meaning and I'll check you\n" +
     "• /related 단어 — words you've already learned that connect to this one\n" +
     "• /weak — the words you keep asking about (your weak spots)\n" +
@@ -659,6 +675,41 @@ async function vocabLesson({ word, sentence }) {
 function swapChinese(def, chinese) {
   const m = (def || "").match(/^.*?(\([^)]*\))\s*\/\s*\[EN\]\s*(.*)$/);
   return m ? `${chinese} ${m[1]} / [EN] ${m[2]}` : `${chinese} (---) / [EN] ${def || ""}`;
+}
+
+// Per-chat "waiting on a follow-up message" state for /def, kept in the Gist
+// (never the repo — see lib/store.js) since the webhook is stateless per call.
+async function getPending(chatId) {
+  if (!process.env.GIST_ID) return null;
+  const all = await readGistFile(PENDING_FILE);
+  const p = all[chatId];
+  if (!p || Date.now() > p.expiresAt) return null;
+  return p;
+}
+
+async function setPending(chatId, pending) {
+  if (!process.env.GIST_ID) return;
+  const all = await readGistFile(PENDING_FILE);
+  if (pending) all[chatId] = pending;
+  else delete all[chatId];
+  await writeGistFile(PENDING_FILE, all);
+}
+
+// Resolves a parked /def: either the follow-up is just the Chinese word (when
+// /def was sent with the word already), or "단어 你的词" together.
+async function resolveDefPending(pending, text, chatId) {
+  await setPending(chatId, null);
+  let word = pending.word;
+  let chinese;
+  if (word) {
+    chinese = text.trim();
+  } else {
+    const m = text.trim().match(/^(\S+)\s+(.+)/s);
+    if (!m) return "Didn't catch that — send it as: 단어 你的词";
+    [, word, chinese] = m;
+    chinese = chinese.trim();
+  }
+  return await applyDefinition(word, chinese);
 }
 
 // Update a word's flashcard Chinese — in the pending batch if it's there,

@@ -4,13 +4,17 @@
 > Update this at the END of a work session. (Rules → CLAUDE.md · Knowledge → Wiki.md ·
 > Lessons → Learning.md)
 
-_Last updated: 2026-07-12_
+_Last updated: 2026-07-15_
 
 ## Current status
 Project is live and actively developed. Front end + Telegram bot + daily review push all
 working and deployed on Vercel. Most recent work has been on the Telegram bot side.
 
 ## Recently done (from git, newest first)
+- `/def` is now conversational: bare `/def` (e.g. tapped from Telegram's "/" suggestion
+  menu, which sends immediately with no chance to type args) parks a pending state in the
+  Gist (`pending.json`) and the next message supplies the missing word/Chinese. Tested
+  locally against a mocked Gist/Telegram fetch (not yet verified against the live bot).
 - Telegram typing indicator while Claude generates a reply.
 - Added a daily Claude-call cap; switched daily push to Korea time (07:30 KST).
 - Raised token caps on structured Claude calls; bounded `/related` context.
@@ -34,5 +38,8 @@ working and deployed on Vercel. Most recent work has been on the Telegram bot si
 - (Add new items here as they come up.)
 
 ## Next entry point
-No task in flight. When you start next: skim recent `git log`, then ask what the goal is.
-If it's a bot change, `api/telegram.js` is the hub; if it's the study UI, `index.html`.
+`/def`'s new conversational flow (see Recently done) hasn't been round-tripped through the
+real Telegram bot yet — worth a live test (tap `/def` from the suggestion menu, confirm the
+follow-up message applies correctly) next time you're in the chat. Otherwise no task in
+flight — skim recent `git log`, then ask what the goal is. If it's a bot change,
+`api/telegram.js` is the hub; if it's the study UI, `index.html`.
