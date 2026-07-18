@@ -116,7 +116,7 @@ def generate_audio(host, profile_id, text, language, engine):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
+        with urllib.request.urlopen(req, timeout=300) as r:
             return r.read()
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")
@@ -157,6 +157,7 @@ def main():
         return
 
     print(f"{len(todo)} new clip(s) to generate" + (" (dry run)" if args.dry_run else ""))
+    done = 0
     for text, lang, profile_id in todo:
         rel_path = os.path.join("audio", lang, f"{slug_for(text)}.wav")
         print(f"  [{lang}] {text!r} -> {rel_path}")
@@ -168,10 +169,11 @@ def main():
         with open(out_path, "wb") as f:
             f.write(audio_bytes)
         manifest[text] = rel_path
+        write_manifest(manifest)  # persist after every clip so a later failure doesn't strand finished work
+        done += 1
 
     if not args.dry_run:
-        write_manifest(manifest)
-        print(f"Wrote {len(todo)} audio file(s), updated {MANIFEST_PATH}")
+        print(f"Wrote {done}/{len(todo)} audio file(s), {MANIFEST_PATH} is up to date")
 
 
 if __name__ == "__main__":

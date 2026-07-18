@@ -2,3 +2,4 @@
 *.json.bak
 *.swp
 .ingest.lock
+__pycache__/
