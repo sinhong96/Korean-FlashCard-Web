@@ -872,6 +872,7 @@ let isFlipped    = false;
 let isSniperMode = false;
 let sessionKey   = null;
 let srs          = {};        // { korean: { rating, rep, interval, efactor, dueDate } }
+let audioManifest = {};       // { text: 'audio/ko/<slug>.wav' } — pre-generated natural TTS, from tts_gen.py
 
 const LS = {
   srs:           'hk_srs_v2',
@@ -889,7 +890,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadSRS();
   loadLocalSessions();
   setupListeners();
-  await fetchSessions();
+  await Promise.all([fetchSessions(), fetchAudioManifest()]);
   restoreLastState();
 });
 
@@ -901,6 +902,15 @@ async function fetchSessions() {
     sessions = [];
   }
   renderSessionList();
+}
+
+async function fetchAudioManifest() {
+  try {
+    const r = await fetch('audio-manifest.json');
+    audioManifest = await r.json();
+  } catch {
+    audioManifest = {};
+  }
 }
 
 // ── Pasted/uploaded sessions (persisted locally, not in sessions.json) ──
@@ -1389,12 +1399,28 @@ function esc(s) {
 // ════════════════════════════════════════
 //  TTS
 // ════════════════════════════════════════
+let ttsAudio = null; // currently playing pre-generated clip, if any
+
 function playTTS(side) {
-  if (!('speechSynthesis' in window) || !activeIdxs.length) return;
+  if (!activeIdxs.length) return;
   const card = cards[activeIdxs[idx]];
   const text = side === 'back' ? card.korean : card.front;
   const lang = side === 'back' ? 'ko-KR' : 'zh-CN';
-  window.speechSynthesis.cancel();
+
+  window.speechSynthesis && window.speechSynthesis.cancel();
+  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
+
+  const file = audioManifest[text];
+  if (file) {
+    ttsAudio = new Audio(file);
+    ttsAudio.play().catch(() => speakBrowserTTS(text, lang));
+    return;
+  }
+  speakBrowserTTS(text, lang);
+}
+
+function speakBrowserTTS(text, lang) {
+  if (!('speechSynthesis' in window)) return;
   const utt = new SpeechSynthesisUtterance(text);
   utt.lang = lang; utt.rate = 0.85;
   const voices = window.speechSynthesis.getVoices();
