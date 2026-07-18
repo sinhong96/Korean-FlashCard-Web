@@ -36,6 +36,9 @@ Browser (index.html)  ──Forgot/Got-it taps──►  api/sync.js  ──► 
 | `api/daily.js` | Cron-triggered morning push (up to 10 words, never-sent first). Manual GET works for testing. |
 | `lib/store.js` | Shared Gist read/write (`weak_words.json`, `vocab_batch.json`, `pending.json`, …). All per-tap state goes here, never the repo. |
 | `ingest.py` | Local pipeline for ingesting word data (see file for details). |
+| `tts_gen.py` | Local, stdlib-only script. Generates natural TTS audio for a session CSV via a locally-running voicebox server. See "Natural TTS (voicebox)" below. |
+| `audio-manifest.json` | Maps a card's exact word/definition text → its pre-generated audio file path. `playTTS()` reads this to decide file-vs-browser-TTS. |
+| `audio/ko/`, `audio/zh/` | Generated WAV clips, named by a hash of their source text. Committed to the repo (static assets, served by Vercel like everything else). |
 | `graphify-out/` | Knowledge-graph output of the project (from the graphify skill). |
 
 ## CSV format
@@ -53,6 +56,41 @@ Word,Definition,Sentence
 2. Append one row to `sessions.json`:
    `{ "file": "vocablist_csv/…​.csv", "date": "YYYY-MM-DD", "session": 1, "tag": null, "label": "Mon DD", "count": 15 }`
 3. `git push` → Vercel redeploys.
+
+## Natural TTS (voicebox)
+The speaker buttons play pre-generated audio when available, falling back to the browser's
+native `speechSynthesis` (robotic, OS-dependent) otherwise. Audio is generated **offline,
+once per session**, not synthesized live by the deployed site — see Memory.md's "Confirmed
+decisions" for why a live server call doesn't fit this architecture.
+
+**How it works:** `tts_gen.py <csv>` reads a session CSV, extracts each row's Korean word
+and Chinese definition (mirroring `index.html`'s `parseCSV()` text extraction exactly, so
+manifest keys match what the card displays), and calls a locally-running
+[voicebox](https://github.com/jamiepine/voicebox) server (`http://127.0.0.1:17493`,
+`POST /generate/stream`) to synthesize each *unique* string as a WAV. Batches all Korean
+clips first, then all Chinese — voicebox reloads its model on every voice-profile switch,
+so alternating per row would pay that cost on almost every clip. Skips any row where the
+word has no Hangul or the definition has no CJK characters (a rare bot data bug, not
+something to blindly feed to the wrong voice).
+
+**Voice profiles** (created once in the voicebox app, `qwen_custom_voice` engine — get IDs
+via `curl http://127.0.0.1:17493/profiles`):
+- Korean: **Sohee** — `61737450-4bee-49d2-b61f-dc75c31fb6a6`
+- Chinese: **Dylan** — `dff9e8a1-e26c-4e19-9162-710c52b0bf70`
+
+**Running it** (voicebox must be open first):
+```
+python3 tts_gen.py vocablist_csv/YYYYMMDD_01_LIST.csv \
+  --ko-profile 61737450-4bee-49d2-b61f-dc75c31fb6a6 \
+  --zh-profile dff9e8a1-e26c-4e19-9162-710c52b0bf70 \
+  --engine qwen_custom_voice
+```
+Safe to re-run — already-generated text is skipped via `audio-manifest.json`.
+
+**Not covered:** reading passages (`speakReading()`, bot-generated) still use browser TTS —
+`api/telegram.js` runs on Vercel and can't reach a local desktop app, so that would need a
+cloud TTS API instead. The "Quick way" paste-from-Gemini flow also stays on browser TTS
+(no session file to key generated audio off of).
 
 ## Environment variables (set in Vercel, never committed)
 | Var | Used by | Purpose |
