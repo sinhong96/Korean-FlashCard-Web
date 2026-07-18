@@ -46,13 +46,16 @@ session file to key audio off of, so it keeps using browser TTS as a fallback.
 **`tts_gen.py`** (new, sibling to `ingest.py`)
 - Input: path to a session CSV (`Word,Definition,Sentence`).
 - For each row, extracts the Korean word (`Word` column) and the Chinese
-  definition text (`Definition` column, stripped of Hanja/EN suffix — reuse
-  whatever parsing `ingest.py` or the frontend already does for this).
+  definition text (`Definition` column, stripped of Hanja/EN suffix — mirrors
+  the `chDef` extraction in `index.html`'s `parseCSV()`).
 - For each *unique* string not already in `audio-manifest.json`, calls
-  `POST http://127.0.0.1:17493/generate` (voicebox must already be running
-  locally) and writes the resulting MP3 to `audio/ko/<slug>.mp3` or
-  `audio/zh/<slug>.mp3` (slug = stable hash or normalized-text slug of the
-  source string).
+  `POST http://127.0.0.1:17493/generate/stream` (voicebox must already be
+  running locally, with a Korean and a Chinese voice profile created) and
+  writes the resulting WAV to `audio/ko/<slug>.wav` or `audio/zh/<slug>.wav`
+  (slug = stable hash of the source string). This endpoint returns raw audio
+  synchronously — the alternative `/generate` endpoint is job-based (queues,
+  then requires polling `/generate/{id}/status`), which doesn't fit a simple
+  batch script.
 - Updates `audio-manifest.json`: `{ "<normalized text>": "audio/ko/<slug>.mp3", ... }`.
 - Fails loudly (non-zero exit, clear error message) if voicebox isn't reachable
   — no silent skip, so a session never gets committed with partially-missing
