@@ -41,7 +41,9 @@ Word,Definition,Sentence
    ```json
    { "file": "vocablist_csv/YYYYMMDD_01_LIST.csv", "date": "YYYY-MM-DD", "session": 1, "tag": null, "label": "Mon DD", "count": 15 }
    ```
-3. `git push` — Vercel auto-redeploys
+3. (Optional, for natural TTS instead of the robotic browser voice) With voicebox
+   running locally: `python3 tts_gen.py vocablist_csv/YYYYMMDD_01_LIST.csv --ko-profile <id> --zh-profile <id> --engine qwen_custom_voice`
+4. `git push` — Vercel auto-redeploys
 
 ## Tech Stack
 
