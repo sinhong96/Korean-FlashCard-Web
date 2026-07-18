@@ -37,6 +37,8 @@ EN_SPLIT_RE = re.compile(r"/\s*\[EN\]", re.IGNORECASE)
 HANJA_RE = re.compile(r"\(([^)]*[一-龥][^)]*)\)")
 DASH_PLACEHOLDER_RE = re.compile(r"\s*\(---\)\s*")
 TRAILING_SLASH_RE = re.compile(r"/\s*$")
+HANGUL_RE = re.compile(r"[가-힣]")
+CJK_RE = re.compile(r"[一-龥]")
 
 
 def extract_chinese_definition(raw_def):
@@ -67,8 +69,15 @@ def read_session_rows(csv_path):
                 continue
             korean = row[0].strip()
             chinese = extract_chinese_definition(row[1])
-            if korean and chinese:
-                pairs.append((korean, chinese))
+            if not korean or not chinese:
+                continue
+            if not HANGUL_RE.search(korean) or not CJK_RE.search(chinese):
+                # Bot data bug: word/definition occasionally swapped or both end up
+                # in the same language. Sending the wrong language to a voice
+                # profile produces garbage audio, so skip rather than mis-generate.
+                print(f"  SKIP (not Korean/Chinese as expected): {korean!r} / {chinese!r}")
+                continue
+            pairs.append((korean, chinese))
         return pairs
 
 
@@ -144,10 +153,14 @@ def main():
     if not args.dry_run:
         check_server(args.host)
 
+    # Grouped by language (all Korean, then all Chinese) rather than interleaved —
+    # voicebox reloads its model on every profile switch, so alternating per-row
+    # would pay that reload cost on nearly every clip instead of just once.
     todo = []
     seen = set()
-    for korean, chinese in pairs:
-        for text, lang, profile_id in ((korean, "ko", args.ko_profile), (chinese, "zh", args.zh_profile)):
+    for lang, profile_id, index in (("ko", args.ko_profile, 0), ("zh", args.zh_profile, 1)):
+        for pair in pairs:
+            text = pair[index]
             if text not in manifest and text not in seen:
                 seen.add(text)
                 todo.append((text, lang, profile_id))

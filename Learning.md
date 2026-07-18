@@ -34,6 +34,22 @@ These are lessons the current code encodes — read them before "improving" thin
 ## New lessons (add below as you hit them)
 <!-- Problem → Cause → Fix/Rule -->
 
+- **A handful of bot-generated CSV rows have the wrong language in `Word` or
+  `Definition`** (e.g. `20260713_01_LIST_Bot.csv` rows with Chinese text like
+  `打破`/`创下` sitting in the `Word` column instead of Korean).
+  → Cause: unclear, likely a bot generation edge case around `/def`. → Rule:
+  `tts_gen.py` now skips any row where `Word` has no Hangul or `Definition`
+  has no CJK characters (see `HANGUL_RE`/`CJK_RE` in `tts_gen.py`) rather than
+  feeding the wrong language to a voice profile. Don't "fix" the CSVs
+  themselves — they're study history (see prohibition below).
+
+- **voicebox reloads its TTS model on every voice-profile switch** — a single
+  `/generate/stream` call after switching from one profile to another can
+  take well over 120s even though the model was already downloaded.
+  → Rule: `tts_gen.py` batches all Korean clips together, then all Chinese
+  clips, instead of alternating per row, to minimize profile swaps. Keep this
+  ordering if you touch the generation loop.
+
 - **Tapping a command from Telegram's "/" suggestion menu sends it immediately** — it
   doesn't just pre-fill the input box for you to keep typing.
   → Cause: Telegram client behavior, not something the bot controls. Any command that
