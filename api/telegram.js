@@ -4,6 +4,9 @@
 //   - "단어 뜻" (+ optional context line)  -> full structured teacher lesson; the
 //     word's CSV row is generated in the same call and stored in the gist batch.
 //     At 15/15 the batch auto-commits as a new session CSV. /v 단어 also works.
+//   - Send a photo (e.g. a YouTube subtitle screenshot) -> same lesson flow, but the
+//     target word and its sentence are read straight off the image via Claude vision.
+//     Sending it as a file (not a photo) isn't supported.
 //   - /batch                              -> show the current lesson batch
 //   - /csv                                -> flush the batch to a CSV session now
 //   - "what does X mean?" / any question  -> recall check against your vocab lists
@@ -51,8 +54,10 @@ module.exports = async (req, res) => {
 
   const msg = req.body && req.body.message;
   const text = msg && msg.text && msg.text.trim();
+  const photos = msg && msg.photo;
+  const caption = msg && msg.caption && msg.caption.trim();
   const chatId = msg && msg.chat && msg.chat.id;
-  if (!text || !chatId) return res.status(200).send("ignored");
+  if ((!text && !(photos && photos.length)) || !chatId) return res.status(200).send("ignored");
   if (process.env.ALLOWED_CHAT_ID && String(chatId) !== process.env.ALLOWED_CHAT_ID) {
     return res.status(200).send("ignored");
   }
@@ -65,52 +70,57 @@ module.exports = async (req, res) => {
     try {
       let reply;
       let html = false; // lessons use Telegram HTML formatting; everything else stays plain
-      const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
-      const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
-      const defMatch = text.match(/^\/?def[:\s]+(\S+)\s+(.+)/is);
-      const lessonMatch = parseLessonRequest(text);
-      // Tapping /def from Telegram's "/" suggestion menu sends it immediately, with no
-      // chance to type args first — so bare /def instead parks a pending state in the
-      // Gist and treats the user's very next (non-slash) message as the missing args.
-      const pending = !/^\//.test(text) ? await getPending(chatId) : null;
-      // A different command interrupting a parked /def means the user moved on —
-      // drop the stale pending state so it doesn't hijack a later unrelated message.
-      if (/^\//.test(text) && !/^\/def\b/i.test(text)) await setPending(chatId, null);
-      if (pending && pending.command === "def") {
-        reply = await resolveDefPending(pending, text, chatId);
-      } else if (/^\/(start|help)\b/i.test(text)) {
-        reply = helpText();
-      } else if (addMatch) {
-        reply = await addWords(addMatch[1]);
-      } else if (relMatch) {
-        reply = await relatedWords(relMatch[1]);
-      } else if (/^\/?related\b/i.test(text)) {
-        reply = "Usage: /related 단어 — I'll find words you've already learned that connect to it.";
-      } else if (/^\/?(quiz|test)( me)?\b/i.test(text)) {
-        reply = await quiz(chatId);
-      } else if (/^\/read\b/i.test(text)) {
-        reply = await readingPractice();
-        html = true;
-      } else if (/^\/weak\b/i.test(text)) {
-        reply = await weakWords();
-      } else if (/^\/csv\b/i.test(text)) {
-        reply = await flushBatch();
-      } else if (/^\/batch\b/i.test(text)) {
-        reply = await batchStatus();
-      } else if (defMatch) {
-        reply = await applyDefinition(defMatch[1], defMatch[2].trim());
-      } else if (/^\/def\b/i.test(text)) {
-        const wordOnly = text.match(/^\/def\s+(\S+)\s*$/i);
-        const word = wordOnly ? wordOnly[1] : null;
-        await setPending(chatId, { command: "def", word, expiresAt: Date.now() + PENDING_TTL_MS });
-        reply = word
-          ? `What should ${word}'s Chinese say? Send just the word.`
-          : "Which word, and what should the Chinese say? Send: 단어 你的词";
-      } else if (lessonMatch) {
-        reply = await vocabLesson(lessonMatch);
+      if (photos && photos.length) {
+        reply = await vocabLessonFromImage(photos, caption);
         html = true;
       } else {
-        reply = await recallCheck(text);
+        const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
+        const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
+        const defMatch = text.match(/^\/?def[:\s]+(\S+)\s+(.+)/is);
+        const lessonMatch = parseLessonRequest(text);
+        // Tapping /def from Telegram's "/" suggestion menu sends it immediately, with no
+        // chance to type args first — so bare /def instead parks a pending state in the
+        // Gist and treats the user's very next (non-slash) message as the missing args.
+        const pending = !/^\//.test(text) ? await getPending(chatId) : null;
+        // A different command interrupting a parked /def means the user moved on —
+        // drop the stale pending state so it doesn't hijack a later unrelated message.
+        if (/^\//.test(text) && !/^\/def\b/i.test(text)) await setPending(chatId, null);
+        if (pending && pending.command === "def") {
+          reply = await resolveDefPending(pending, text, chatId);
+        } else if (/^\/(start|help)\b/i.test(text)) {
+          reply = helpText();
+        } else if (addMatch) {
+          reply = await addWords(addMatch[1]);
+        } else if (relMatch) {
+          reply = await relatedWords(relMatch[1]);
+        } else if (/^\/?related\b/i.test(text)) {
+          reply = "Usage: /related 단어 — I'll find words you've already learned that connect to it.";
+        } else if (/^\/?(quiz|test)( me)?\b/i.test(text)) {
+          reply = await quiz(chatId);
+        } else if (/^\/read\b/i.test(text)) {
+          reply = await readingPractice();
+          html = true;
+        } else if (/^\/weak\b/i.test(text)) {
+          reply = await weakWords();
+        } else if (/^\/csv\b/i.test(text)) {
+          reply = await flushBatch();
+        } else if (/^\/batch\b/i.test(text)) {
+          reply = await batchStatus();
+        } else if (defMatch) {
+          reply = await applyDefinition(defMatch[1], defMatch[2].trim());
+        } else if (/^\/def\b/i.test(text)) {
+          const wordOnly = text.match(/^\/def\s+(\S+)\s*$/i);
+          const word = wordOnly ? wordOnly[1] : null;
+          await setPending(chatId, { command: "def", word, expiresAt: Date.now() + PENDING_TTL_MS });
+          reply = word
+            ? `What should ${word}'s Chinese say? Send just the word.`
+            : "Which word, and what should the Chinese say? Send: 단어 你的词";
+        } else if (lessonMatch) {
+          reply = await vocabLesson(lessonMatch);
+          html = true;
+        } else {
+          reply = await recallCheck(text);
+        }
       }
       const payload = typeof reply === "string" ? { text: reply } : reply;
       if (payload.text) await sendTelegram(chatId, payload.text, { html, buttons: payload.buttons });
@@ -198,13 +208,16 @@ async function checkDailyCap() {
   await writeGistFile(USAGE_FILE, { date: today, count: count + 1 });
 }
 
-async function claude(system, userText, outputSchema, opts = {}) {
+// userContent is a plain string for text calls, or an array of content blocks
+// (e.g. an image block + a text block) for vision calls — either passes straight
+// through as the message's "content", which the Messages API accepts as-is.
+async function claude(system, userContent, outputSchema, opts = {}) {
   await checkDailyCap();
   const body = {
     model: opts.model || MODEL,
     max_tokens: opts.maxTokens || 1500,
     system,
-    messages: [{ role: "user", content: userText }],
+    messages: [{ role: "user", content: userContent }],
   };
   if (outputSchema) body.output_config = { format: { type: "json_schema", schema: outputSchema } };
   // Overloaded (529) / rate-limited (429) / 5xx are transient — retry with backoff
@@ -270,6 +283,8 @@ function helpText() {
     "Korean vocab bot — what I can do:\n\n" +
     "• \"단어 뜻\" (+ context sentence on the next line) — full teacher lesson; the word " +
     "joins your current batch and auto-saves to the flashcard app at 15/15\n" +
+    "• Send a screenshot (e.g. a YouTube subtitle) — I'll read the Korean text and teach " +
+    "the hardest word in it, same as typing 단어 뜻 (send as a photo, not a file)\n" +
     "• /batch — see the current lesson batch\n" +
     "• /csv — save the batch to a CSV session right now\n" +
     "• /def 단어 你的词 — change the Chinese shown on that word's flashcard (tap /def alone and I'll ask for the word)\n" +
@@ -635,9 +650,17 @@ async function vocabLesson({ word, sentence }) {
   const userText = sentence ? `Word: ${word}\nContext sentence: ${sentence}` : `Word: ${word}`;
   const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 6000 });
   const out = JSON.parse(gen);
+  return finishLesson(out, word);
+}
+
+// Shared tail for both the typed-word lesson flow and the image lesson flow below:
+// batches the row (or commits it straight away if the Gist batch isn't set up) and
+// builds the Chinese-gloss picker buttons. fallbackWord only matters if the model's
+// "word" field is somehow empty, which the schema makes very unlikely for text input.
+async function finishLesson(out, fallbackWord) {
   const options = (out.chinese_options || []).map((s) => s.trim()).filter(Boolean);
   const row = {
-    word: (out.word || word).trim(),
+    word: (out.word || fallbackWord || "").trim(),
     definition: `${options[0] || ""} (${(out.hanja || "---").trim()}) / [EN] ${(out.english || "").trim()}`,
     sentence: out.sentence,
     pronunciation: (out.pronunciation || "").trim().replace(/^\[|\]$/g, ""),
@@ -669,6 +692,70 @@ async function vocabLesson({ word, sentence }) {
     return { text: out.lesson + `\n\n🚨 Batch complete (${BATCH_SIZE}/${BATCH_SIZE})! Auto-saving…\n` + saved + hint, buttons };
   }
   return { text: out.lesson + `\n\n[Batch ${rows.length}/${BATCH_SIZE}]` + hint, buttons };
+}
+
+// ---------- vocab lessons from a screenshot (e.g. a YouTube subtitle frame) ----------
+// Same lesson pipeline as vocabLesson() above, except the target word and its sentence
+// are read off an image instead of typed in — see IMAGE_LESSON_SYSTEM for how the model
+// picks which word is worth teaching.
+
+const IMAGE_LESSON_INTRO =
+  "You are given a screenshot from a Korean YouTube video, taken by Sin Hong on his phone " +
+  "because it contains a Korean subtitle with a word he doesn't understand. The frame may " +
+  "contain a stylized/handwritten caption overlay AND a separate standard subtitle line — " +
+  "read ALL visible Korean text. From it, pick the SINGLE word or short phrase a Chinese-" +
+  "speaking TOPIK 3-4 learner is LEAST likely to already know — prefer advanced, idiomatic, " +
+  "or onomatopoeic vocabulary (e.g. 느릿느릿, 훌쩍) over basic particles or elementary words. " +
+  'Return "word" in its dictionary form (기본형), not as conjugated in the subtitle. If a ' +
+  'genuinely strong second candidate exists, name it in "runner_up"; otherwise "runner_up" ' +
+  'is "". If NO Korean text is legible in the image at all, set "word" to "" and every other ' +
+  "field to \"\" (or [] for array fields) — do not guess or hallucinate a word. He may also " +
+  "send a caption alongside the photo — if present, treat it as a hint about which word he " +
+  "means, but don't require it. Otherwise, produce the SAME lesson JSON described below, " +
+  'using the picked word and the Korean sentence it appeared in as the "sentence" context.\n\n';
+
+const IMAGE_LESSON_SYSTEM = IMAGE_LESSON_INTRO + LESSON_SYSTEM;
+
+const IMAGE_LESSON_SCHEMA = {
+  type: "object",
+  properties: { ...LESSON_SCHEMA.properties, runner_up: { type: "string" } },
+  required: [...LESSON_SCHEMA.required, "runner_up"],
+  additionalProperties: false,
+};
+
+async function vocabLessonFromImage(photos, caption) {
+  const imageBlock = await fetchTelegramPhotoAsBase64(photos[photos.length - 1].file_id);
+  const hintBlock = { type: "text", text: caption ? `User hint: ${caption}` : "No caption" };
+  const gen = await claude(IMAGE_LESSON_SYSTEM, [imageBlock, hintBlock], IMAGE_LESSON_SCHEMA, {
+    model: LESSON_MODEL,
+    maxTokens: 6000,
+  });
+  const out = JSON.parse(gen);
+  if (!out.word || !out.word.trim()) {
+    return "Couldn't read a Korean subtitle in that screenshot — try a clearer or closer crop.";
+  }
+  const result = await finishLesson(out);
+  const runnerUp = (out.runner_up || "").trim();
+  if (!runnerUp || typeof result === "string") return result;
+  return {
+    ...result,
+    text: result.text + `\n\n👀 Also spotted: ${runnerUp} — send "${runnerUp} 뜻" if you meant that one instead.`,
+  };
+}
+
+// Downloads a Telegram photo (by file_id) and returns it as a Claude vision content block.
+async function fetchTelegramPhotoAsBase64(fileId) {
+  const meta = await fetch(
+    `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`
+  );
+  if (!meta.ok) throw new Error(`Telegram getFile: ${meta.status}`);
+  const { result } = await meta.json();
+  const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${result.file_path}`;
+  const file = await fetch(fileUrl);
+  if (!file.ok) throw new Error(`Telegram file download: ${file.status}`);
+  const data = Buffer.from(await file.arrayBuffer()).toString("base64");
+  const mediaType = /\.png$/i.test(result.file_path) ? "image/png" : "image/jpeg";
+  return { type: "image", source: { type: "base64", media_type: mediaType, data } };
 }
 
 // Swap the Chinese part of a stored definition, keeping (hanja) / [EN] intact
