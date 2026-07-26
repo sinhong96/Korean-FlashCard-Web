@@ -398,6 +398,15 @@ async function handleCallback(cq) {
     return;
   }
 
+  // "e|단어" — "Other" tapped: park a pending state so the user's next plain-text
+  // message supplies the new Chinese, same flow as sending a bare /def.
+  if (kind === "e") {
+    await setPending(cq.message.chat.id, { command: "def", word, expiresAt: Date.now() + PENDING_TTL_MS });
+    await answerCallback(cq.id, `✏️ ${word}`);
+    if (cq.message) await sendTelegram(cq.message.chat.id, `What should ${word}'s Chinese say? Send just the word.`);
+    return;
+  }
+
   if (kind === "m" && process.env.GIST_ID) {
     const state = await readGist();
     delete state[word]; // mastered — remove from the queue
@@ -671,8 +680,13 @@ async function finishLesson(out, fallbackWord) {
     .filter((t) => Buffer.byteLength(`d|${row.word}|${t}`, "utf8") <= 64)
     .slice(0, 4)
     .map((t) => ({ text: t, callback_data: `d|${row.word}|${t}` }));
-  const buttons = choices.length > 1 ? [choices] : undefined;
-  const hint = buttons ? `\n🀄 Flashcard 中文 = ${options[0]} — tap to change, or /def ${row.word} 你的词` : "";
+  // "Other" lets him type a gloss the AI didn't suggest, without retyping /def word by hand
+  const otherButton =
+    Buffer.byteLength(`e|${row.word}`, "utf8") <= 64
+      ? { text: "✏️ Other", callback_data: `e|${row.word}` }
+      : null;
+  const buttons = otherButton ? [choices, [otherButton]].filter((row) => row.length) : undefined;
+  const hint = buttons ? `\n🀄 Flashcard 中文 = ${options[0]} — tap a button to change it` : "";
 
   if (!process.env.GIST_ID) {
     // No batch store yet — save the word straight to today's Bot session instead
