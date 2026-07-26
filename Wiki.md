@@ -98,7 +98,8 @@ cloud TTS API instead. The "Quick way" paste-from-Gemini flow also stays on brow
 | `TELEGRAM_BOT_TOKEN` | telegram, daily | Bot auth (from @BotFather) |
 | `TELEGRAM_SECRET_TOKEN` | telegram | Verifies webhook calls |
 | `ANTHROPIC_API_KEY` | telegram | Claude API for lessons/quiz |
-| `GITHUB_TOKEN` | telegram, store | PAT — repo Contents R/W (commits) + Gists |
+| `GITHUB_TOKEN` | telegram | Fine-grained PAT — repo Contents R/W (commits) only |
+| `GIST_TOKEN` | store | Classic PAT, `gist` scope only — required for all Gist reads/writes (fine-grained tokens can't access Gists at all) |
 | `GIST_ID` | sync, daily, store | Private Gist holding the review queue |
 | `ALLOWED_CHAT_ID` | telegram, daily | Restricts bot to your chat |
 | `CRON_SECRET` | daily | Protects the cron endpoint |

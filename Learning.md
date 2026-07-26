@@ -59,3 +59,13 @@ These are lessons the current code encodes — read them before "improving" thin
   missing piece, and treat the user's next non-slash message as the answer. See `/def` in
   `api/telegram.js` (`getPending`/`setPending`/`resolveDefPending`) for the pattern —
   reuse it for any future command that needs args.
+
+- **`GIST_ID` had never actually been set in Vercel** — every Gist-backed feature
+  (batch tracking, `/def` pending state, presumably the weak-words queue too) was
+  silently degraded the whole time. Symptom: every lesson auto-committed as its own
+  1-word session instead of batching to 15, and `/batch` said "GIST_ID set up first."
+  → Cause found once `GIST_ID` was added: Gist writes then failed with 403. `GITHUB_TOKEN`
+  is a **fine-grained PAT**, and fine-grained PATs cannot access the Gist API at all —
+  only classic PATs with the `gist` scope can. → Rule: Gist calls (`lib/store.js`) need
+  their own `GIST_TOKEN` (classic PAT, `gist` scope only); keep `GITHUB_TOKEN`
+  (fine-grained) for repo-content commits in `api/telegram.js`, don't try to unify them.
