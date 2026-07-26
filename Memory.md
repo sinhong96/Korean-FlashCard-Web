@@ -4,14 +4,31 @@
 > Update this at the END of a work session. (Rules → CLAUDE.md · Knowledge → Wiki.md ·
 > Lessons → Learning.md)
 
-_Last updated: 2026-07-18_
+_Last updated: 2026-07-26_
 
 ## Current status
 Project is live and actively developed. Front end + Telegram bot + daily review push all
-working and deployed on Vercel. Most recent work: replaced robotic browser TTS with
-pre-generated natural audio (voicebox) for all 29 existing sessions.
+working and deployed on Vercel. Most recent work: added a tap-to-type "Other" button to
+lesson messages, and in the process discovered + fixed a long-standing gap where
+`GIST_ID`/Gist auth had never actually been finished — see below.
 
 ## Recently done (from git, newest first)
+- **`/def` "Other" button + the `GIST_TOKEN` fix (2026-07-26)**: lesson messages now show
+  a 5th button, "✏️ Other", alongside the AI's suggested Chinese-gloss buttons. Tapping it
+  parks the same pending state bare `/def` uses, then your next message supplies the
+  Chinese directly — no more retyping `/def word 你的词` by hand. Building this surfaced a
+  bigger pre-existing bug: `GIST_ID` had never actually been set in Vercel (`/batch` said
+  so directly), so every Gist-backed feature — batch tracking, `/def`'s pending state, and
+  probably `/weak`/the review queue — was silently degraded the whole time (every lesson
+  auto-committed as its own 1-word session instead of batching to 15). Created a private
+  Gist and set `GIST_ID`, then hit a second wall: `GITHUB_TOKEN` is a fine-grained PAT,
+  and fine-grained PATs **cannot access the Gist API at all** (a hard GitHub platform
+  limit, not a missing scope). Fix: `lib/store.js` now authenticates Gist calls with a
+  separate `GIST_TOKEN` (classic PAT, `gist` scope only); `GITHUB_TOKEN` keeps doing repo
+  commits as before. Verified live: `/batch` now shows real batch status, and tapping
+  "Other" → typing a Chinese word → bot confirms the swap, all round-tripped through the
+  real bot. Design/plan docs in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
+  Full env var details in Wiki.md; the classic-vs-fine-grained-PAT gotcha is in Learning.md.
 - **Natural TTS via voicebox** (all sessions): `tts_gen.py` (new, stdlib-only) reads a
   session CSV, calls a locally-running [voicebox](https://github.com/jamiepine/voicebox)
   server to synthesize Korean word + Chinese definition audio, writes WAVs to `audio/` and
@@ -59,9 +76,11 @@ pre-generated natural audio (voicebox) for all 29 existing sessions.
 
 ## Next entry point
 Two independent threads, pick whichever the user raises:
-1. `/def`'s new conversational flow hasn't been round-tripped through the real Telegram bot
-   yet — worth a live test (tap `/def` from the suggestion menu, confirm the follow-up
-   message applies correctly).
+1. Now that `GIST_ID`/`GIST_TOKEN` actually work, worth spot-checking the OTHER Gist-backed
+   features that were likely silently degraded the same way for a while: `/weak` (weak
+   words list) and the daily review push (`api/daily.js`, `api/sync.js`'s Forgot/Got-it
+   taps). Not yet verified live — unlike `/def`'s pending flow and batch tracking, which
+   *are* now confirmed working.
 2. TTS: every *new* session going forward needs one extra manual step before it gets
    natural audio — run `tts_gen.py` with voicebox open locally (see Wiki.md for the exact
    command and profile IDs), then push. If a new session shows up without audio, that step
