@@ -590,9 +590,10 @@ function parseLessonRequest(text) {
   const cmd = text.match(/^\/(?:v|learn)\s+([\s\S]+)/i);
   const body = cmd ? cmd[1].trim() : text;
   const lines = body.split("\n");
-  const m = lines[0].match(/^(.{1,40}?)\s*(?:뜻|의 뜻|뜻은)\s*\??$/);
-  if (m) return { word: m[1].trim(), sentence: lines.slice(1).join("\n").trim() };
-  if (cmd) return { word: lines[0].trim(), sentence: lines.slice(1).join("\n").trim() };
+  const toWords = (s) => s.split(",").map((w) => w.trim()).filter(Boolean);
+  const m = lines[0].match(/^(.{1,80}?)\s*(?:뜻|의 뜻|뜻은)\s*\??$/);
+  if (m) return { words: toWords(m[1]), sentence: lines.slice(1).join("\n").trim() };
+  if (cmd) return { words: toWords(lines[0]), sentence: lines.slice(1).join("\n").trim() };
   return null;
 }
 
