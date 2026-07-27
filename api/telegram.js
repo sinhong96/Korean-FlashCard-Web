@@ -393,7 +393,8 @@ async function handleCallback(cq) {
     try { result = await applyDefinition(w, term); } catch (e) { result = "Failed: " + e.message; }
     await answerCallback(cq.id, result.slice(0, 190));
     if (cq.message) {
-      await editMessage(cq.message.chat.id, cq.message.message_id, `${cq.message.text}\n\n— 🀄 ${w} → ${term}`);
+      const keptMarkup = withoutWordButtons(cq.message.reply_markup, w);
+      await editMessage(cq.message.chat.id, cq.message.message_id, `${cq.message.text}\n\n— 🀄 ${w} → ${term}`, keptMarkup);
     }
     return;
   }
@@ -427,12 +428,27 @@ async function answerCallback(id, text) {
   });
 }
 
-async function editMessage(chatId, messageId, text) {
-  // Omitting reply_markup removes the inline buttons
+// Removes only the buttons belonging to `word` from an existing inline keyboard,
+// so resolving one word's Chinese-gloss/"Other" buttons in a multi-word lesson
+// message doesn't wipe out the OTHER words' still-untapped button rows too.
+function withoutWordButtons(replyMarkup, word) {
+  if (!replyMarkup || !replyMarkup.inline_keyboard) return undefined;
+  const rows = replyMarkup.inline_keyboard
+    .map((row) => row.filter((btn) => {
+      const data = btn.callback_data || "";
+      return data !== `e|${word}` && !data.startsWith(`d|${word}|`);
+    }))
+    .filter((row) => row.length > 0);
+  return rows.length ? { inline_keyboard: rows } : undefined;
+}
+
+async function editMessage(chatId, messageId, text, replyMarkup) {
+  // Omitting reply_markup removes the inline buttons entirely; pass one
+  // through (e.g. from withoutWordButtons) to keep other rows tappable.
   await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/editMessageText`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text }),
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }),
   });
 }
 
