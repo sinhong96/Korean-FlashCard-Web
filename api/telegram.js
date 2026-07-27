@@ -615,7 +615,7 @@ const LESSON_SCHEMA = {
   properties: {
     lesson: { type: "string" },
     sentence: { type: "string" },
-    entries: { type: "array", items: LESSON_ENTRY_SCHEMA, minItems: 1 },
+    entries: { type: "array", items: LESSON_ENTRY_SCHEMA },
   },
   required: ["lesson", "sentence", "entries"],
   additionalProperties: false,
@@ -680,6 +680,7 @@ async function vocabLesson({ words, sentence }) {
   const userText = sentence ? `Words: ${wordList}\nContext sentence: ${sentence}` : `Words: ${wordList}`;
   const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 6000 });
   const out = JSON.parse(gen);
+  if (!out.entries || !out.entries.length) throw new Error("Claude returned no lesson entries");
   return finishLesson(out, words);
 }
 
@@ -769,11 +770,7 @@ const IMAGE_LESSON_SYSTEM = IMAGE_LESSON_INTRO + LESSON_SYSTEM;
 
 const IMAGE_LESSON_SCHEMA = {
   type: "object",
-  properties: {
-    ...LESSON_SCHEMA.properties,
-    entries: { ...LESSON_SCHEMA.properties.entries, maxItems: 1 },
-    runner_up: { type: "string" },
-  },
+  properties: { ...LESSON_SCHEMA.properties, runner_up: { type: "string" } },
   required: [...LESSON_SCHEMA.required, "runner_up"],
   additionalProperties: false,
 };
@@ -786,6 +783,7 @@ async function vocabLessonFromImage(photos, caption) {
     maxTokens: 6000,
   });
   const out = JSON.parse(gen);
+  out.entries = (out.entries || []).slice(0, 1); // schema can't cap array length server-side; enforce in code
   const picked = out.entries[0];
   if (!picked || !picked.word || !picked.word.trim()) {
     return "Couldn't read a Korean subtitle in that screenshot — try a clearer or closer crop.";
