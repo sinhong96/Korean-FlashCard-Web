@@ -740,7 +740,7 @@ async function finishLesson(out, fallbackWords) {
 
   if (batchRows.length >= BATCH_SIZE) {
     const saved = await flushBatch();
-    return { text: out.lesson + `\n\n🚨 Batch complete (${BATCH_SIZE}/${BATCH_SIZE})! Auto-saving…\n` + saved + hint, buttons };
+    return { text: out.lesson + `\n\n🚨 Batch complete (${batchRows.length}/${BATCH_SIZE})! Auto-saving…\n` + saved + hint, buttons };
   }
   return { text: out.lesson + `\n\n[Batch ${batchRows.length}/${BATCH_SIZE}]` + hint, buttons };
 }
