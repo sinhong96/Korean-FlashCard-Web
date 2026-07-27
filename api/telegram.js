@@ -597,18 +597,27 @@ function parseLessonRequest(text) {
   return null;
 }
 
-const LESSON_SCHEMA = {
+const LESSON_ENTRY_SCHEMA = {
   type: "object",
   properties: {
-    lesson: { type: "string" },
     word: { type: "string" },
     chinese_options: { type: "array", items: { type: "string" } },
     hanja: { type: "string" },
     english: { type: "string" },
     pronunciation: { type: "string" },
-    sentence: { type: "string" },
   },
-  required: ["lesson", "word", "chinese_options", "hanja", "english", "pronunciation", "sentence"],
+  required: ["word", "chinese_options", "hanja", "english", "pronunciation"],
+  additionalProperties: false,
+};
+
+const LESSON_SCHEMA = {
+  type: "object",
+  properties: {
+    lesson: { type: "string" },
+    sentence: { type: "string" },
+    entries: { type: "array", items: LESSON_ENTRY_SCHEMA, minItems: 1 },
+  },
+  required: ["lesson", "sentence", "entries"],
   additionalProperties: false,
 };
 
@@ -616,11 +625,12 @@ const LESSON_SYSTEM =
   "You are Sin Hong's expert, witty Korean teacher, replying inside Telegram. He is a Chinese " +
   "speaker learning Korean.\n\n" +
   "Formatting: the lesson is sent with Telegram HTML parse mode. No markdown (no ##, no **). " +
-  "The ONLY tags allowed are <b> and <i>: wrap the target word and 2-4 genuinely key terms in " +
+  "The ONLY tags allowed are <b> and <i>: wrap each target word and 2-4 genuinely key terms in " +
   "<b>…</b>, and Korean example sentences in <i>…</i>. Never use other tags, and write any " +
   "literal &, < or > as &amp;, &lt;, &gt;.\n\n" +
-  "Given a Korean word (and optionally a context sentence he met it in), return JSON with:\n\n" +
-  '"lesson" — a lesson in exactly this layout:\n\n' +
+  "You'll be given one or more Korean words (comma-separated when there's more than one), and " +
+  "optionally a shared context sentence he met them in. Return JSON with:\n\n" +
+  '"lesson" — a lesson in exactly this layout. For a single word:\n\n' +
   "'단어'는 [brief, clear definition in Korean]. — when the pronunciation differs from the " +
   "spelling, write the word as '단어' [발음], e.g. '대통령' [대ː통녕].\n" +
   "[If a context sentence was given: 1-2 sentences of witty or culturally insightful commentary on it.]\n\n" +
@@ -640,27 +650,37 @@ const LESSON_SYSTEM =
   "✍️ 연습해 봅시다!\n" +
   "[A question in Korean prompting him to practice the word.]\n" +
   '(예: "[sample answer]")\n\n' +
-  'Keep the lesson under 3000 characters.\n\n' +
-  '"word" — the target Korean word/phrase only. No HTML in any field except "lesson".\n' +
-  '"chinese_options" — 2-4 candidate Chinese glosses for the flashcard, each a concise everyday ' +
+  "For two or more words: keep the SAME section headers (📖 뜻, 💬 문맥, 🗂 쓰이는 상황, " +
+  "💡 선생님의 팁, ✍️ 연습해 봅시다!) but cover every word together under each header instead of " +
+  "repeating the whole layout per word — one 📖 뜻 section listing each word's meaning in turn, " +
+  "one 💬 문맥 section discussing how the words work together in the shared sentence, one shared " +
+  "practice question using all of them. Open with each word's core definition ('단어1'는 ..., " +
+  "'단어2'는 ...) before those sections. Write ONE cohesive lesson, never separate back-to-back " +
+  "lessons.\n\n" +
+  "Keep the lesson under 3000 characters regardless of word count.\n\n" +
+  '"sentence" — one natural Korean example sentence covering all the words together, followed by ' +
+  "its Chinese translation in parentheses. If he gave a context sentence, prefer it (cleaned up / " +
+  "completed) as the example.\n\n" +
+  '"entries" — one object per input word, in the SAME order they were given, each with:\n' +
+  '  "word" — that entry\'s target Korean word/phrase only. No HTML in any field except "lesson".\n' +
+  '  "chinese_options" — 2-4 candidate Chinese glosses for the flashcard, each a concise everyday ' +
   "Mandarin term (join close synonyms with /). Sin Hong is MALAYSIAN Chinese: order by what a " +
   "Malaysian/SEA Mandarin speaker actually says — e.g. for 왕세자 put 王储 first and the literal " +
   "hanja reading 王世子 later; include a literal reading only when it is real, natural Chinese. " +
   "NEVER write template labels such as 现代中文核心解释 or 原生韩文汉字.\n" +
-  '"hanja" — the word\'s hanja: --- if none, - for each non-hanja syllable (e.g. 事情--, 嫌惡--).\n' +
-  '"english" — brief English definition, comma-separated senses.\n' +
-  '"pronunciation" — the word\'s 표준 발음 in hangul with length marks, NO brackets (e.g. for ' +
+  '  "hanja" — the word\'s hanja: --- if none, - for each non-hanja syllable (e.g. 事情--, 嫌惡--).\n' +
+  '  "english" — brief English definition, comma-separated senses.\n' +
+  '  "pronunciation" — the word\'s 표준 발음 in hangul with length marks, NO brackets (e.g. for ' +
   "대통령: 대ː통녕; for 밥값: 밥깝). ONLY when it differs from the spelling — empty string \"\" when " +
   "reading the spelling as written is already correct. Apply real sound rules (비음화, 경음화, " +
-  "연음, 자음동화, vowel length); do not invent differences.\n" +
-  '"sentence" — one natural Korean example sentence followed by its Chinese translation in parentheses. ' +
-  "If he gave a context sentence, prefer it (cleaned up / completed) as the example.";
+  "연음, 자음동화, vowel length); do not invent differences.";
 
-async function vocabLesson({ word, sentence }) {
-  const userText = sentence ? `Word: ${word}\nContext sentence: ${sentence}` : `Word: ${word}`;
+async function vocabLesson({ words, sentence }) {
+  const wordList = words.join(", ");
+  const userText = sentence ? `Words: ${wordList}\nContext sentence: ${sentence}` : `Words: ${wordList}`;
   const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 6000 });
   const out = JSON.parse(gen);
-  return finishLesson(out, word);
+  return finishLesson(out, words);
 }
 
 // Shared tail for both the typed-word lesson flow and the image lesson flow below:
