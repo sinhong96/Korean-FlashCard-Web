@@ -4,15 +4,40 @@
 > Update this at the END of a work session. (Rules → CLAUDE.md · Knowledge → Wiki.md ·
 > Lessons → Learning.md)
 
-_Last updated: 2026-07-26_
+_Last updated: 2026-07-27_
 
 ## Current status
 Project is live and actively developed. Front end + Telegram bot + daily review push all
-working and deployed on Vercel. Most recent work: added a tap-to-type "Other" button to
-lesson messages, and in the process discovered + fixed a long-standing gap where
-`GIST_ID`/Gist auth had never actually been finished — see below.
+working and deployed on Vercel. Most recent work: multi-word lesson requests (teach 2+
+Korean words in one message) — built via subagent-driven-development, verified live
+including a real bug found during testing (see below).
 
 ## Recently done (from git, newest first)
+- **Multi-word lesson requests (2026-07-27)**: `단어1, 단어2 뜻` (any number of
+  comma-separated words) now teaches all of them in one cohesive lesson sharing the
+  example sentence, while still creating one independent flashcard row + one Chinese-gloss
+  button block per word — asking for 2 words is equivalent to asking twice, in one
+  exchange. `parseLessonRequest` now returns a `words[]` array; `LESSON_SCHEMA` nests
+  per-word data under `entries[]`; `finishLesson` (shared by the typed-word and screenshot
+  flows) loops over entries. Two things surfaced during implementation/testing, both fixed
+  before this shipped:
+  - The final code review flagged `minItems`/`maxItems` added to the schema as
+    unverified against Anthropic's structured-output support — checked against the
+    `claude-api` skill's authoritative reference, confirmed those ARE unsupported
+    ("complex array constraints"), and replaced them with plain code-level checks instead
+    (`vocabLesson` throws on zero entries; the screenshot flow truncates to one entry in
+    code). Worth remembering for any *future* structured-output schema in this file:
+    array-length constraints don't work, only `type`/`items`/`enum`/`additionalProperties:
+    false` and similar are honored.
+  - Live testing caught a real bug not visible in review: tapping a Chinese-gloss button
+    for one word in a multi-word message wiped out the OTHER word's still-untapped buttons
+    too. Root cause: `editMessage()` called Telegram's `editMessageText` with no
+    `reply_markup`, which Telegram treats as "clear the whole keyboard" — harmless for the
+    old single-word case (one button block per message), broken once messages could stack
+    several. Fixed by reconstructing the keyboard from `callback_query.message.reply_markup`
+    minus only the resolved word's buttons (`withoutWordButtons()`), instead of omitting
+    `reply_markup` entirely.
+  Design/plan docs in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 - **`/def` "Other" button + the `GIST_TOKEN` fix (2026-07-26)**: lesson messages now show
   a 5th button, "✏️ Other", alongside the AI's suggested Chinese-gloss buttons. Tapping it
   parks the same pending state bare `/def` uses, then your next message supplies the
@@ -75,16 +100,16 @@ lesson messages, and in the process discovered + fixed a long-standing gap where
 - (Add new items here as they come up.)
 
 ## Next entry point
-Two independent threads, pick whichever the user raises:
-1. Now that `GIST_ID`/`GIST_TOKEN` actually work, worth spot-checking the OTHER Gist-backed
-   features that were likely silently degraded the same way for a while: `/weak` (weak
-   words list) and the daily review push (`api/daily.js`, `api/sync.js`'s Forgot/Got-it
-   taps). Not yet verified live — unlike `/def`'s pending flow and batch tracking, which
-   *are* now confirmed working.
-2. TTS: every *new* session going forward needs one extra manual step before it gets
-   natural audio — run `tts_gen.py` with voicebox open locally (see Wiki.md for the exact
-   command and profile IDs), then push. If a new session shows up without audio, that step
-   was probably skipped, not a bug.
+- Daily review push (`api/daily.js`) was manually verified working post-`GIST_TOKEN` fix
+  (`{"ok":true,"sent":0}` — empty queue, no error). Sin Hong said he doesn't expect to use
+  `/weak` or `/def` going forward, so no need to proactively re-check those.
+- TTS: every *new* session going forward needs one extra manual step before it gets
+  natural audio — run `tts_gen.py` with voicebox open locally (see Wiki.md for the exact
+  command and profile IDs), then push. If a new session shows up without audio, that step
+  was probably skipped, not a bug.
+
+Otherwise no task in flight — skim recent `git log`, then ask what the goal is. If it's a
+bot change, `api/telegram.js` is the hub; if it's the study UI, `index.html`.
 
 Otherwise no task in flight — skim recent `git log`, then ask what the goal is. If it's a
 bot change, `api/telegram.js` is the hub; if it's the study UI, `index.html`.
