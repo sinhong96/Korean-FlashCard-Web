@@ -769,7 +769,11 @@ const IMAGE_LESSON_SYSTEM = IMAGE_LESSON_INTRO + LESSON_SYSTEM;
 
 const IMAGE_LESSON_SCHEMA = {
   type: "object",
-  properties: { ...LESSON_SCHEMA.properties, runner_up: { type: "string" } },
+  properties: {
+    ...LESSON_SCHEMA.properties,
+    entries: { ...LESSON_SCHEMA.properties.entries, maxItems: 1 },
+    runner_up: { type: "string" },
+  },
   required: [...LESSON_SCHEMA.required, "runner_up"],
   additionalProperties: false,
 };
