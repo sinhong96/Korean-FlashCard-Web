@@ -684,49 +684,64 @@ async function vocabLesson({ words, sentence }) {
 }
 
 // Shared tail for both the typed-word lesson flow and the image lesson flow below:
-// batches the row (or commits it straight away if the Gist batch isn't set up) and
-// builds the Chinese-gloss picker buttons. fallbackWord only matters if the model's
-// "word" field is somehow empty, which the schema makes very unlikely for text input.
-async function finishLesson(out, fallbackWord) {
-  const options = (out.chinese_options || []).map((s) => s.trim()).filter(Boolean);
-  const row = {
-    word: (out.word || fallbackWord || "").trim(),
-    definition: `${options[0] || ""} (${(out.hanja || "---").trim()}) / [EN] ${(out.english || "").trim()}`,
-    sentence: out.sentence,
-    pronunciation: (out.pronunciation || "").trim().replace(/^\[|\]$/g, ""),
-  };
+// batches each entry's row (or commits it straight away if the Gist batch isn't set up)
+// and builds each entry's Chinese-gloss picker buttons. fallbackWords (an array, matched
+// by position) only matters if an entry's own "word" field is somehow empty; the image
+// flow passes no fallbackWords since it doesn't know the word ahead of time.
+async function finishLesson(out, fallbackWords) {
+  const rows = [];
+  const buttonBlocks = [];
+  const hints = [];
 
-  // One tap swaps the flashcard's Chinese gloss (callback_data caps at 64 bytes)
-  const choices = options
-    .filter((t) => Buffer.byteLength(`d|${row.word}|${t}`, "utf8") <= 64)
-    .slice(0, 4)
-    .map((t) => ({ text: t, callback_data: `d|${row.word}|${t}` }));
-  // "Other" lets him type a gloss the AI didn't suggest, without retyping /def word by hand
-  const otherButton =
-    Buffer.byteLength(`e|${row.word}`, "utf8") <= 64
-      ? { text: "✏️ Other", callback_data: `e|${row.word}` }
-      : null;
-  const buttons = otherButton ? [choices, [otherButton]].filter((row) => row.length) : undefined;
-  const hint = buttons ? `\n🀄 Flashcard 中文 = ${options[0]} — tap a button to change it` : "";
+  out.entries.forEach((entry, i) => {
+    const options = (entry.chinese_options || []).map((s) => s.trim()).filter(Boolean);
+    const row = {
+      word: (entry.word || (fallbackWords && fallbackWords[i]) || "").trim(),
+      definition: `${options[0] || ""} (${(entry.hanja || "---").trim()}) / [EN] ${(entry.english || "").trim()}`,
+      sentence: out.sentence,
+      pronunciation: (entry.pronunciation || "").trim().replace(/^\[|\]$/g, ""),
+    };
+    rows.push(row);
+
+    // One tap swaps the flashcard's Chinese gloss (callback_data caps at 64 bytes)
+    const choices = options
+      .filter((t) => Buffer.byteLength(`d|${row.word}|${t}`, "utf8") <= 64)
+      .slice(0, 4)
+      .map((t) => ({ text: t, callback_data: `d|${row.word}|${t}` }));
+    // "Other" lets him type a gloss the AI didn't suggest, without retyping /def word by hand
+    const otherButton =
+      Buffer.byteLength(`e|${row.word}`, "utf8") <= 64
+        ? { text: "✏️ Other", callback_data: `e|${row.word}` }
+        : null;
+    if (otherButton) {
+      buttonBlocks.push(choices, [otherButton]);
+      hints.push(`\n🀄 ${row.word} 中文 = ${options[0]} — tap a button to change it`);
+    }
+  });
+
+  const buttons = buttonBlocks.length ? buttonBlocks.filter((row) => row.length) : undefined;
+  const hint = hints.join("");
 
   if (!process.env.GIST_ID) {
-    // No batch store yet — save the word straight to today's Bot session instead
-    const saved = await commitEntries([row]);
-    return { text: out.lesson + "\n\n(Batch tracking needs GIST_ID — saved this word directly.)\n" + saved + hint, buttons };
+    // No batch store yet — save the words straight to today's Bot session instead
+    const saved = await commitEntries(rows);
+    return { text: out.lesson + "\n\n(Batch tracking needs GIST_ID — saved directly.)\n" + saved + hint, buttons };
   }
 
   const batch = await readGistFile(BATCH_FILE);
-  const rows = batch.rows || [];
-  const idx = rows.findIndex((r) => r.word === row.word);
-  if (idx >= 0) rows[idx] = row; // re-asking a word updates its row, no duplicate
-  else rows.push(row);
-  await writeGistFile(BATCH_FILE, { rows, startedAt: batch.startedAt || new Date().toISOString() });
+  const batchRows = batch.rows || [];
+  for (const row of rows) {
+    const idx = batchRows.findIndex((r) => r.word === row.word);
+    if (idx >= 0) batchRows[idx] = row; // re-asking a word updates its row, no duplicate
+    else batchRows.push(row);
+  }
+  await writeGistFile(BATCH_FILE, { rows: batchRows, startedAt: batch.startedAt || new Date().toISOString() });
 
-  if (rows.length >= BATCH_SIZE) {
+  if (batchRows.length >= BATCH_SIZE) {
     const saved = await flushBatch();
     return { text: out.lesson + `\n\n🚨 Batch complete (${BATCH_SIZE}/${BATCH_SIZE})! Auto-saving…\n` + saved + hint, buttons };
   }
-  return { text: out.lesson + `\n\n[Batch ${rows.length}/${BATCH_SIZE}]` + hint, buttons };
+  return { text: out.lesson + `\n\n[Batch ${batchRows.length}/${BATCH_SIZE}]` + hint, buttons };
 }
 
 // ---------- vocab lessons from a screenshot (e.g. a YouTube subtitle frame) ----------
@@ -741,13 +756,14 @@ const IMAGE_LESSON_INTRO =
   "read ALL visible Korean text. From it, pick the SINGLE word or short phrase a Chinese-" +
   "speaking TOPIK 3-4 learner is LEAST likely to already know — prefer advanced, idiomatic, " +
   "or onomatopoeic vocabulary (e.g. 느릿느릿, 훌쩍) over basic particles or elementary words. " +
-  'Return "word" in its dictionary form (기본형), not as conjugated in the subtitle. If a ' +
-  'genuinely strong second candidate exists, name it in "runner_up"; otherwise "runner_up" ' +
-  'is "". If NO Korean text is legible in the image at all, set "word" to "" and every other ' +
-  "field to \"\" (or [] for array fields) — do not guess or hallucinate a word. He may also " +
-  "send a caption alongside the photo — if present, treat it as a hint about which word he " +
-  "means, but don't require it. Otherwise, produce the SAME lesson JSON described below, " +
-  'using the picked word and the Korean sentence it appeared in as the "sentence" context.\n\n';
+  'Return exactly one object in "entries", with its "word" in dictionary form (기본형), not ' +
+  "as conjugated in the subtitle. If a genuinely strong second candidate exists, name it in " +
+  '"runner_up"; otherwise "runner_up" is "". If NO Korean text is legible in the image at ' +
+  'all, return a single entry with "word" set to "" and every other field "" (or [] for ' +
+  "array fields) — do not guess or hallucinate a word. He may also send a caption alongside " +
+  "the photo — if present, treat it as a hint about which word he means, but don't require " +
+  "it. Otherwise, produce the SAME lesson JSON described below, using the picked word and " +
+  'the Korean sentence it appeared in as the "sentence" context.\n\n';
 
 const IMAGE_LESSON_SYSTEM = IMAGE_LESSON_INTRO + LESSON_SYSTEM;
 
@@ -766,7 +782,8 @@ async function vocabLessonFromImage(photos, caption) {
     maxTokens: 6000,
   });
   const out = JSON.parse(gen);
-  if (!out.word || !out.word.trim()) {
+  const picked = out.entries[0];
+  if (!picked || !picked.word || !picked.word.trim()) {
     return "Couldn't read a Korean subtitle in that screenshot — try a clearer or closer crop.";
   }
   const result = await finishLesson(out);
