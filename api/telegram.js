@@ -697,6 +697,10 @@ async function vocabLesson({ words, sentence }) {
   const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 6000 });
   const out = JSON.parse(gen);
   if (!out.entries || !out.entries.length) throw new Error("Claude returned no lesson entries");
+  // Schema can't cap array length server-side (Anthropic structured output ignores
+  // minItems/maxItems) — Claude sometimes splits one input phrase into extra entries
+  // (e.g. a context sentence that reads like a second word). Enforce the count in code.
+  out.entries = out.entries.slice(0, words.length);
   return finishLesson(out, words);
 }
 
