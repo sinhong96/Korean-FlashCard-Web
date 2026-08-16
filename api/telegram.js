@@ -645,7 +645,13 @@ const LESSON_SYSTEM =
   "<b>…</b>, and Korean example sentences in <i>…</i>. Never use other tags, and write any " +
   "literal &, < or > as &amp;, &lt;, &gt;.\n\n" +
   "You'll be given one or more Korean words (comma-separated when there's more than one), and " +
-  "optionally a shared context sentence he met them in. Return JSON with:\n\n" +
+  "optionally a shared context sentence he met them in. Word count = number of comma-separated " +
+  "segments ONLY. Treat each segment as ONE indivisible target, however many tokens it contains " +
+  "or however typo'd it is (e.g. '원가 흐림이 바꿨다' is a single garbled phrase, not two words) — " +
+  "silently correct the typo but explain and define it as one phrase, never split its meaning " +
+  "into separate per-token dictionary entries. Return exactly one JSON entry per segment, never " +
+  "more, and set that entry's \"word\" to the (corrected) segment itself, not a sub-word pulled " +
+  "out of it. Return JSON with:\n\n" +
   '"lesson" — a lesson in exactly this layout. For a single word:\n\n' +
   "'단어'는 [brief, clear definition in Korean]. — when the pronunciation differs from the " +
   "spelling, write the word as '단어' [발음], e.g. '대통령' [대ː통녕].\n" +
