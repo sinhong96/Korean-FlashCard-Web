@@ -43,5 +43,6 @@
   {"file":"vocablist_csv/20260814_01_LIST_Bot.csv","date":"2026-08-14","session":1,"tag":"Bot","label":"Aug 14","count":15},
   {"file":"vocablist_csv/20260819_01_LIST_Bot.csv","date":"2026-08-19","session":1,"tag":"Bot","label":"Aug 19","count":15},
   {"file":"vocablist_csv/20260822_01_LIST_Bot.csv","date":"2026-08-22","session":1,"tag":"Bot","label":"Aug 22","count":15},
-  {"file":"vocablist_csv/20260830_01_LIST_Bot.csv","date":"2026-08-30","session":1,"tag":"Bot","label":"Aug 30","count":15}
+  {"file":"vocablist_csv/20260830_01_LIST_Bot.csv","date":"2026-08-30","session":1,"tag":"Bot","label":"Aug 30","count":15},
+  {"file":"vocablist_csv/20260902_01_LIST_Bot.csv","date":"2026-09-02","session":1,"tag":"Bot","label":"Sep 2","count":15}
 ]
