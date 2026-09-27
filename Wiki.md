@@ -31,9 +31,10 @@ Browser (index.html)  ──Forgot/Got-it taps──►  api/sync.js  ──► 
 | `sessions.json` | Index of study sessions the app lists in the sidebar. **App only sees a CSV if it's listed here.** |
 | `vocablist_csv/*.csv` | The actual word lists. Header: `Word,Definition,Sentence`. |
 | `readings.json` | Stored reading passages (the bot's `/read` feature). |
-| `api/telegram.js` | Telegram webhook. Lessons, `/batch`, `/csv`, quiz, recall check, `add:`. Auto-commits a session CSV when the lesson batch hits 15/15. |
+| `api/telegram.js` | Telegram webhook. Lessons, `/find`, `/batch`, `/csv`, quiz, recall check, `add:`. Auto-commits a session CSV when the lesson batch hits 15/15. |
 | `api/sync.js` | Public endpoint. Browser posts `forgot`/`remove`; updates the Gist review queue. |
 | `api/daily.js` | Cron-triggered morning push (up to 10 words, never-sent first). Manual GET works for testing. |
+| `lib/search.js` | Pure, dependency-free corpus search (“have I asked this word before?”). No I/O — callers pass in the rows `loadVocab()` builds. Powers the bot's `/find` and the repeat warning on lessons. |
 | `lib/store.js` | Shared Gist read/write (`weak_words.json`, `vocab_batch.json`, `pending.json`, …). All per-tap state goes here, never the repo. |
 | `ingest.py` | Local pipeline for ingesting word data (see file for details). |
 | `tts_gen.py` | Local, stdlib-only script. Generates natural TTS audio for a session CSV via a locally-running voicebox server. See "Natural TTS (voicebox)" below. |
@@ -91,6 +92,27 @@ Safe to re-run — already-generated text is skipped via `audio-manifest.json`.
 `api/telegram.js` runs on Vercel and can't reach a local desktop app, so that would need a
 cloud TTS API instead. The "Quick way" paste-from-Gemini flow also stays on browser TTS
 (no session file to key generated audio off of).
+
+## "Asked before?" search
+The same question — *have I studied this word already?* — is answered on both surfaces,
+because a word studied more than once is a word that didn't stick.
+
+- **Bot:** `/find 단어` (alias `/search`) matches the Korean word and the Chinese/English
+  definition, never the example sentence. Results show each session the word appeared in,
+  a `⚠️ N×` marker for repeats, and the Gist forgot count. Bare `/find` lists every word
+  asked 2+ times. **No Claude call** — pure string matching, so it's free and doesn't touch
+  `DAILY_MESSAGE_CAP`. The uncommitted Gist batch counts as history alongside the CSVs.
+- **Lessons:** every lesson (typed or from a screenshot) is prefixed with
+  `⚠️ 단어 — 3rd time, you first asked it on Jul 26 (2× already).` when the word is already
+  in the corpus. The history load runs *in parallel* with the Claude call, and fails soft —
+  a GitHub hiccup costs the notice, never the lesson.
+- **App:** a search box in the sidebar, plus a `⚠️ N repeats` chip for the standing list.
+  Results carry your local SM-2 rating dot (which the bot can't see); clicking one opens
+  that word's session and jumps to the card.
+
+**The matching rules exist twice on purpose:** `lib/search.js` for the bot, and the
+"CROSS-SESSION SEARCH" block in `index.html` for the app, because the front end has no
+build step and can't `require()` a module. Change one, change the other.
 
 ## Environment variables (set in Vercel, never committed)
 | Var | Used by | Purpose |

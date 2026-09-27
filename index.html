@@ -139,6 +139,84 @@
       min-height: 0;
     }
 
+    /* ── cross-session search: "have I studied this word before?" ── */
+    .vocab-search { padding: 0 8px 6px; display: flex; flex-direction: column; gap: 5px; }
+
+    .vocab-search input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 10px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--rp);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .vocab-search input:focus {
+      border-color: var(--pink);
+      box-shadow: 0 0 0 3px var(--pink-pale);
+    }
+
+    /* One tap for the standing weak list, same as the bot's bare /find */
+    .repeat-chip {
+      align-self: flex-start;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: var(--rp);
+      background: var(--yellow-pale);
+      color: #a16207;
+      border: 1px solid var(--yellow-border);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .repeat-chip:hover { filter: brightness(0.97); }
+    .repeat-chip.active { background: var(--yellow-border); }
+    .repeat-chip[hidden] { display: none; }
+
+    .search-results { flex: 1; overflow-y: auto; padding: 6px; min-height: 0; }
+
+    .search-hint {
+      padding: 14px 10px;
+      text-align: center;
+      color: var(--text-light);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .search-item {
+      padding: 8px 10px;
+      border-radius: var(--rs);
+      cursor: pointer;
+      margin-bottom: 2px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      transition: background 0.13s;
+    }
+    .search-item:hover { background: var(--pink-pale); }
+    .search-item .sdot { margin-top: 4px; cursor: inherit; }
+    .search-item .sdot:hover { transform: none; box-shadow: none; }
+
+    .search-korean { font-size: 0.86rem; font-weight: 700; color: var(--text); }
+    .search-def { font-size: 0.74rem; color: var(--text-mid); margin-top: 1px; word-break: break-word; }
+    .search-where { font-size: 0.66rem; color: var(--text-light); margin-top: 2px; }
+
+    .repeat-pill {
+      font-size: 0.64rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: var(--rp);
+      background: var(--yellow-pale);
+      color: #a16207;
+      border: 1px solid var(--yellow-border);
+      white-space: nowrap;
+      margin-left: 5px;
+    }
+
     .session-item {
       padding: 9px 10px;
       border-radius: var(--rs);
@@ -714,6 +792,15 @@
       <button class="sidebar-close" onclick="toggleSidebar()" title="Close">✕</button>
     </div>
     <div class="autosave-bar">✓ Progress auto-saved in this browser</div>
+    <!-- Search every session at once: a word you've studied more than once is a word
+         that didn't stick. Mirrors the bot's /find. -->
+    <div class="vocab-search">
+      <input type="search" id="vocab-search-input" autocomplete="off" spellcheck="false"
+             placeholder="Search all sessions — 단어 / 中文 / English">
+      <button class="repeat-chip" id="repeat-chip" hidden
+              title="Words you've studied in more than one session — the ones that didn't stick"></button>
+    </div>
+    <div class="search-results" id="search-results" style="display:none;"></div>
     <div class="session-scroll" id="session-list">
       <div style="padding:16px 10px;text-align:center;color:var(--text-light);font-size:0.8rem;">Loading…</div>
     </div>
@@ -890,6 +977,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadSRS();
   loadLocalSessions();
   setupListeners();
+  setupVocabSearch();
   await Promise.all([fetchSessions(), fetchAudioManifest()]);
   restoreLastState();
 });
@@ -983,13 +1071,14 @@ function deleteLocalSession(file) {
   renderSessionList();
 }
 
-function loadSession(file, label) {
+// Async so a search result can wait for the session to load before jumping to its card.
+async function loadSession(file, label) {
   const local = localSessions.find(s => s.file === file);
   if (local) {
     initCards(local.cards, file);
     closeSidebarOnMobile();
   } else {
-    fetchAndLoadCSV(file, label);
+    await fetchAndLoadCSV(file, label);
   }
 }
 
@@ -1004,6 +1093,198 @@ async function fetchAndLoadCSV(file, label) {
   } catch (e) {
     alert('Could not load session: ' + e.message);
   }
+}
+
+// ════════════════════════════════════════
+//  CROSS-SESSION SEARCH — "have I studied this word before?"
+//  A word studied in more than one session is a word that didn't stick, so repeats
+//  are flagged. This mirrors the bot's /find; the matching and ranking rules are the
+//  same ones in lib/search.js, kept as a small copy here because the front end has no
+//  build step and can't require() that file. Change one, change the other.
+// ════════════════════════════════════════
+let wordIndex = null;      // every card of every session, built once on first search
+let indexBuilding = null;  // in-flight build, so two fast keystrokes don't load twice
+
+// All the CSVs together are ~142KB, so the whole history just gets loaded once and
+// held in memory — no index file to maintain in the repo.
+async function buildWordIndex() {
+  const rows = [];
+  for (const s of localSessions) {
+    const date = s.ts ? new Date(s.ts).toISOString().slice(0, 10) : '';
+    for (const c of (s.cards || [])) rows.push({ ...c, file: s.file, label: s.label, date });
+  }
+  const loaded = await Promise.all(sessions.map(async s => {
+    try {
+      const r = await fetch(s.file);
+      return parseCSV(await r.text()).map(c => ({ ...c, file: s.file, label: s.label, date: s.date || '' }));
+    } catch {
+      return []; // one unreadable session shouldn't blank the whole search
+    }
+  }));
+  for (const list of loaded) rows.push(...list);
+  return rows;
+}
+
+function ensureWordIndex() {
+  if (wordIndex) return Promise.resolve(wordIndex);
+  if (!indexBuilding) indexBuilding = buildWordIndex().then(rows => (wordIndex = rows));
+  return indexBuilding;
+}
+
+// Matches the Korean, the Chinese and the English gloss — NOT the example sentence,
+// which would bury the real hit under every other card that happens to use the word.
+function searchMatches(row, q) {
+  return [row.korean, row.front, row.english, row.hanja].some(f => (f || '').toLowerCase().includes(q));
+}
+
+// One entry per word, carrying every session it appeared in. Two studies of the same
+// word on one day count as 2 but list that day once (it really happens — 경신하다).
+function groupByKorean(rows) {
+  const byWord = new Map();
+  for (const row of rows) {
+    const korean = (row.korean || '').trim();
+    if (!korean) continue;
+    let e = byWord.get(korean);
+    if (!e) {
+      e = { korean, front: '', english: '', count: 0, seen: [], lastDate: '', file: row.file, label: row.label };
+      byWord.set(korean, e);
+    }
+    e.count++;
+    const date = row.date || '';
+    if (!e.seen.some(s => s.date === date)) e.seen.push({ date, label: row.label || date, file: row.file });
+    // Newest occurrence wins: it carries the current definition after any /def edit,
+    // and it's the session a click should open.
+    if (date >= e.lastDate) {
+      e.lastDate = date;
+      e.front = row.front || '';
+      e.english = row.english || '';
+      e.file = row.file;
+      e.label = row.label;
+    }
+  }
+  for (const e of byWord.values()) e.seen.sort((a, b) => a.date.localeCompare(b.date));
+  return [...byWord.values()];
+}
+
+function rankEntries(entries, query) {
+  const q = (query || '').toLowerCase().trim();
+  return entries.sort((a, b) =>
+    (a.korean.toLowerCase() === q ? 0 : 1) - (b.korean.toLowerCase() === q ? 0 : 1) ||
+    b.count - a.count ||
+    b.lastDate.localeCompare(a.lastDate) ||
+    a.korean.localeCompare(b.korean)
+  );
+}
+
+function repeatEntries(rows) {
+  return rankEntries(groupByKorean(rows).filter(e => e.count > 1), '');
+}
+
+const RATING_TITLES = { 0: 'Not rated yet', 1: 'Forgot', 3: 'Good', 5: 'Mastered' };
+
+function renderSearchResults(entries, note) {
+  const box = document.getElementById('search-results');
+  box.innerHTML = '';
+  if (note) {
+    const hint = document.createElement('div');
+    hint.className = 'search-hint';
+    hint.innerHTML = note;
+    box.appendChild(hint);
+  }
+  entries.forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'search-item';
+    const rating = getRating(e.korean);
+    const def = [e.front, e.english].filter(Boolean).join(' · ');
+    div.innerHTML = `
+      <span class="sdot sdot-${rating}" title="${RATING_TITLES[rating] || 'Not rated yet'}"></span>
+      <div style="flex:1;min-width:0;">
+        <div><span class="search-korean">${escapeHTML(e.korean)}</span>${
+          e.count > 1 ? `<span class="repeat-pill">⚠️ ${e.count}×</span>` : ''
+        }</div>
+        ${def ? `<div class="search-def">${escapeHTML(def)}</div>` : ''}
+        <div class="search-where">${escapeHTML(e.seen.map(s => s.label).join(', '))}</div>
+      </div>`;
+    div.onclick = () => openWordFromSearch(e);
+    box.appendChild(div);
+  });
+}
+
+function escapeHTML(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function showSearchPanel(on) {
+  document.getElementById('search-results').style.display = on ? 'block' : 'none';
+  document.getElementById('session-list').style.display = on ? 'none' : 'block';
+  if (!on) document.getElementById('repeat-chip').classList.remove('active');
+}
+
+async function runVocabSearch() {
+  const q = document.getElementById('vocab-search-input').value.trim().toLowerCase();
+  if (!q) { showSearchPanel(false); return; }
+  showSearchPanel(true);
+  document.getElementById('repeat-chip').classList.remove('active');
+  renderSearchResults([], 'Searching…');
+  const rows = await ensureWordIndex();
+  // A slower load can land after the box has been cleared or retyped — ignore it then.
+  const now = document.getElementById('vocab-search-input').value.trim().toLowerCase();
+  if (now !== q) return;
+  const hits = rankEntries(groupByKorean(rows.filter(r => searchMatches(r, q))), q);
+  updateRepeatChip(rows);
+  if (!hits.length) {
+    renderSearchResults([], `No card matches <b>${escapeHTML(q)}</b>.<br>You haven't studied that one yet.`);
+    return;
+  }
+  renderSearchResults(hits, null);
+}
+
+// The standing weak list, one tap — the same thing bare /find shows in Telegram.
+async function showRepeats() {
+  const input = document.getElementById('vocab-search-input');
+  input.value = '';
+  showSearchPanel(true);
+  document.getElementById('repeat-chip').classList.add('active');
+  renderSearchResults([], 'Loading your history…');
+  const rows = await ensureWordIndex();
+  updateRepeatChip(rows);
+  const repeats = repeatEntries(rows);
+  renderSearchResults(
+    repeats,
+    repeats.length
+      ? `<b>${repeats.length}</b> word${repeats.length > 1 ? 's' : ''} studied in more than one session — the ones that didn't stick.`
+      : 'No word has come up twice yet. Nothing to worry about.'
+  );
+}
+
+function updateRepeatChip(rows) {
+  const chip = document.getElementById('repeat-chip');
+  const n = repeatEntries(rows).length;
+  chip.textContent = n ? `⚠️ ${n} repeats` : '⚠️ No repeats';
+}
+
+function setupVocabSearch() {
+  const input = document.getElementById('vocab-search-input');
+  const chip = document.getElementById('repeat-chip');
+  chip.hidden = false;
+  chip.textContent = '⚠️ Repeats';   // real count fills in once the history is loaded
+  chip.onclick = showRepeats;
+  let t;
+  input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(runVocabSearch, 120); });
+  input.addEventListener('search', runVocabSearch);   // the ✕ in a search field
+}
+
+async function openWordFromSearch(entry) {
+  await loadSession(entry.file, entry.label);
+  const ai = cards.findIndex(c => c.korean === entry.korean);
+  const ri = ai === -1 ? -1 : activeIdxs.indexOf(ai);
+  if (ri === -1) return;   // sniper mode can hide a mastered card; leave the user on the session
+  idx = ri;
+  localStorage.setItem(LS.idx, idx);
+  showStudy();
+  renderCard();
+  renderCardList();
+  closeSidebarOnMobile();
 }
 
 function restoreLastState() {
@@ -1504,6 +1785,10 @@ function setupListeners() {
   // Keyboard shortcuts
   document.addEventListener('keydown', e => {
     if (document.getElementById('modal-bg').classList.contains('open')) return;
+    // Space flips the card, so while typing in a field (e.g. the search box) the
+    // shortcuts must stand down — otherwise "마음 근육" can't be typed at all.
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (!activeIdxs.length) return;
     if (e.code === 'Space')       { e.preventDefault(); flipCard(); }
     else if (e.code === 'ArrowLeft')  navigate(-1);

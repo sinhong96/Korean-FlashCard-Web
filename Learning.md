@@ -69,3 +69,26 @@ These are lessons the current code encodes — read them before "improving" thin
   only classic PATs with the `gist` scope can. → Rule: Gist calls (`lib/store.js`) need
   their own `GIST_TOKEN` (classic PAT, `gist` scope only); keep `GITHUB_TOKEN`
   (fine-grained) for repo-content commits in `api/telegram.js`, don't try to unify them.
+
+- **Adding a text input to `index.html` broke typing spaces in it.**
+  → Cause: the global `keydown` handler binds Space to `flipCard()` with
+  `preventDefault()`, and had no guard for form fields — the app had never had a
+  text input outside a modal before, so nothing exposed it. Typing "마음 근육"
+  flipped the card instead of inserting a space. → Fix/Rule: that handler now
+  returns early when `e.target` is an `INPUT`/`TEXTAREA`/contenteditable. Keep
+  the guard if you add any future field.
+
+- **"How many times was this word asked" must count rows, not distinct sessions.**
+  → Observed: 경신하다 appears twice inside one CSV
+  (`20260713_01_LIST_Bot.csv`, two slightly different definitions and sentences),
+  i.e. genuinely asked twice the same day. Counting distinct sessions reports it
+  as a one-off and it drops off the repeat list. → Rule: in `lib/search.js`,
+  `count` is the number of occurrences while `dates`/`sessions` are de-duplicated
+  for display. The two numbers deliberately disagree for same-day repeats.
+
+- **The matching rules are deliberately duplicated in two places.**
+  → Cause: the front end has no build step, so `index.html` can't `require()`
+  `lib/search.js`. → Rule: `lib/search.js` (bot) and the "CROSS-SESSION SEARCH"
+  block in `index.html` (app) each hold a small copy of the same match/rank rules.
+  Change one, change the other — `scratchpad` tests assert both report the same
+  repeat count off the real CSVs, which is what catches drift.

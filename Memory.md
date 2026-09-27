@@ -4,15 +4,34 @@
 > Update this at the END of a work session. (Rules → CLAUDE.md · Knowledge → Wiki.md ·
 > Lessons → Learning.md)
 
-_Last updated: 2026-07-27_
+_Last updated: 2026-09-27_
 
 ## Current status
 Project is live and actively developed. Front end + Telegram bot + daily review push all
-working and deployed on Vercel. Most recent work: multi-word lesson requests (teach 2+
-Korean words in one message) — built via subagent-driven-development, verified live
-including a real bug found during testing (see below).
+working and deployed on Vercel. Most recent work: the "asked before?" search — **written and
+fully tested locally, NOT yet committed or deployed.** See the top of "Recently done".
 
 ## Recently done (from git, newest first)
+- **"Have I asked this before?" search (2026-09-27) — ⚠️ uncommitted, not yet deployed.**
+  A word asked more than once is a word that didn't stick, so repeats are the weak-vocab
+  signal. Three pieces, all fed by the existing CSV corpus (no new endpoint, no new data
+  file, no npm packages):
+  - `lib/search.js` (new) — pure, dependency-free match/group/rank helpers, no I/O.
+  - `api/telegram.js` — `/find 단어` (alias `/search`) searching Korean/Chinese/English
+    across every session plus the uncommitted batch; bare `/find` lists all repeats. No
+    Claude call at all, so it's free. Lessons now open with `⚠️ 단어 — 3rd time, you first
+    asked it on Jul 26 (2× already).`; the history load runs in parallel with the Claude
+    call and fails soft.
+  - `index.html` — sidebar search box + `⚠️ N repeats` chip; results show the local SM-2
+    rating dot and click through to the card.
+  Tested locally: 25 unit assertions on `lib/search.js`, 9 on the real Telegram handler
+  (fetch stubbed, CSVs off disk), 7 on the lesson repeat notice (Claude + Gist stubbed),
+  12 on `index.html`'s script block run in a VM, and a headless-Chrome pass driving the
+  real page (typed queries, the chip, click-through, no page errors). Bot and app
+  independently agree (12 repeats across 51 sessions / 682 cards at time of writing;
+  the number moves as you study — the tests assert the invariant, not a fixed count).
+  **Still missing: a live Telegram round-trip, which needs a deploy.** Test scripts are in the session scratchpad, not the
+  repo — rewrite them if needed rather than hunting for them.
 - **Multi-word lesson requests (2026-07-27)**: `단어1, 단어2 뜻` (any number of
   comma-separated words) now teaches all of them in one cohesive lesson sharing the
   example sentence, while still creating one independent flashcard row + one Chinese-gloss
@@ -100,6 +119,10 @@ including a real bug found during testing (see below).
 - (Add new items here as they come up.)
 
 ## Next entry point
+- **First thing: commit + push the search work, then verify it live** — send `/find 짜릿하다`
+  (expect ⚠️ 3×), bare `/find` (expect the 10-word list), and ask a repeated word like
+  `재앙 뜻` to confirm the ⚠️ notice renders above the lesson and the Chinese-gloss buttons
+  still work. Everything below is unchanged.
 - Daily review push (`api/daily.js`) was manually verified working post-`GIST_TOKEN` fix
   (`{"ok":true,"sent":0}` — empty queue, no error). Sin Hong said he doesn't expect to use
   `/weak` or `/def` going forward, so no need to proactively re-check those.

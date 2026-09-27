@@ -7,6 +7,10 @@
 //   - Send a photo (e.g. a YouTube subtitle screenshot) -> same lesson flow, but the
 //     target word and its sentence are read straight off the image via Claude vision.
 //     Sending it as a file (not a photo) isn't supported.
+//     Either flow warns "⚠️ 2nd time" when the word is already in your study history.
+//   - /find 단어                           -> have you asked this word before? Searches every
+//     session CSV (+ the uncommitted batch) by Korean/Chinese/English. Bare /find lists every
+//     word asked 2+ times — the weak ones. No Claude call, so it's free.
 //   - /batch                              -> show the current lesson batch
 //   - /csv                                -> flush the batch to a CSV session now
 //   - "what does X mean?" / any question  -> recall check against your vocab lists
@@ -23,6 +27,7 @@
 //   ALLOWED_CHAT_ID        your Telegram chat id; if set, other chats are ignored
 
 const { readGist, writeGist, readGistFile, writeGistFile } = require("../lib/store");
+const { searchCorpus, repeatWords, groupByWord, FIELD_SEP } = require("../lib/search");
 
 const REPO = "sinhong96/Korean-FlashCard-Web";
 const BRANCH = "main";
@@ -77,6 +82,9 @@ module.exports = async (req, res) => {
         const addMatch = text.match(/^\/?add[:\s]+(.+)/is);
         const relMatch = text.match(/^\/?related[:\s]+(.+)/is);
         const defMatch = text.match(/^\/?def[:\s]+(\S+)\s+(.+)/is);
+        // Slash required here, unlike /add and /related: "find" and "search" are ordinary
+        // English words that would otherwise hijack a plain question.
+        const findMatch = text.match(/^\/(find|search)[:\s]+(.+)/is);
         const lessonMatch = parseLessonRequest(text);
         // Tapping /def from Telegram's "/" suggestion menu sends it immediately, with no
         // chance to type args first — so bare /def instead parks a pending state in the
@@ -100,6 +108,10 @@ module.exports = async (req, res) => {
         } else if (/^\/read\b/i.test(text)) {
           reply = await readingPractice();
           html = true;
+        } else if (findMatch) {
+          reply = await findWords(findMatch[2]);
+        } else if (/^\/(find|search)\b/i.test(text)) {
+          reply = await findWords(""); // bare command -> the repeat list, see findWords()
         } else if (/^\/weak\b/i.test(text)) {
           reply = await weakWords();
         } else if (/^\/csv\b/i.test(text)) {
@@ -184,7 +196,8 @@ async function loadVocab() {
       const rows = parseCSV(await githubRaw(entry.file)).slice(1); // drop header
       for (const r of rows) {
         if (r[0] && r[0].trim()) {
-          all.push({ word: r[0].trim(), definition: r[1] || "", sentence: r[2] || "", pron: r[3] || "", session: entry.label });
+          // date (not just the display label) so /find and the repeat warning can name a real day
+          all.push({ word: r[0].trim(), definition: r[1] || "", sentence: r[2] || "", pron: r[3] || "", session: entry.label, date: entry.date });
         }
       }
     })
@@ -290,6 +303,8 @@ function helpText() {
     "• /def 단어 你的词 — change the Chinese shown on that word's flashcard (tap /def alone and I'll ask for the word)\n" +
     "• Just ask, e.g. \"what does 밥값 mean?\" or guess a meaning and I'll check you\n" +
     "• /related 단어 — words you've already learned that connect to this one\n" +
+    "• /find 단어 — have I asked this before? Searches every session by Korean, Chinese or " +
+    "English; a ⚠️ means you've asked it more than once. Tap /find alone for the full repeat list\n" +
     "• /weak — the words you keep asking about (your weak spots)\n" +
     "• /quiz — 5 fill-in-the-blank questions, new sentences, tap to answer (misses → review queue)\n" +
     "• /read — a fresh Korean passage woven from your vocab (also saved to the app with TTS)\n" +
@@ -322,6 +337,114 @@ async function relatedWords(word) {
     "Plain text, no markdown. If nothing in the list relates, say so plainly and suggest 2-3 new " +
     "related words he could learn next (mark those clearly as 'not in your list yet').";
   return claude(sys, `Target word: ${target}\n\nA slice of his vocab list:\n${vocabList}`);
+}
+
+// ---------- "have I asked this before?" (matching logic lives in lib/search.js) ----------
+// A word you've asked more than once is a word that didn't stick, so the repeat count is
+// the weak-vocab signal here. No Claude call at all — pure string matching, so /find costs
+// nothing and doesn't eat into DAILY_MESSAGE_CAP.
+
+// The uncommitted batch has no session label of its own; this stands in for one. It also
+// has no per-row ask date, so anything reported against it is worded without a date.
+const BATCH_SESSION = "current batch";
+
+// Words still sitting in the uncommitted Gist batch count as asked: one asked yesterday
+// with the batch at 8/15 hasn't reached a CSV yet, but you did already ask it.
+async function loadAskedCorpus() {
+  const { all } = await loadVocab();
+  if (!process.env.GIST_ID) return all;
+  let batchRows = [];
+  try {
+    batchRows = (await readGistFile(BATCH_FILE)).rows || [];
+  } catch (e) {
+    console.error("batch read for search", e.message); // degrade to the CSVs alone, don't fail the search
+  }
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date());
+  return all.concat(
+    batchRows.map((r) => ({
+      word: r.word,
+      definition: r.definition || "",
+      sentence: r.sentence || "",
+      session: BATCH_SESSION,
+      date: today,
+    }))
+  );
+}
+
+// The review queue is a nice-to-have on a search result — never a reason to fail one.
+async function weakCounts() {
+  if (!process.env.GIST_ID) return {};
+  try {
+    return await readGist();
+  } catch (e) {
+    console.error("weak read for search", e.message);
+    return {};
+  }
+}
+
+function formatFound(entry, weak, i, numbered = true) {
+  const marks = [];
+  if (entry.count > 1) marks.push(`⚠️ ${entry.count}×`);
+  marks.push(entry.sessions.join(", "));
+  const w = weak[entry.word];
+  if (w && w.count) marks.push(`forgot ${w.count}×`);
+  const head = numbered ? `${i + 1}. ` : "";
+  return `${head}${entry.word} — ${entry.definition}\n   ${marks.join(FIELD_SEP)}`;
+}
+
+async function findWords(query) {
+  const q = (query || "").trim();
+  const [corpus, weak] = await Promise.all([loadAskedCorpus(), weakCounts()]);
+
+  // Bare /find (which Telegram sends immediately when tapped from the "/" menu) lists
+  // your repeats instead of asking for an argument — no guessing what to look up.
+  if (!q) {
+    // Count them all, then show a screenful: the heading must report the real total,
+    // not the capped one, or past 15 repeats it would understate the problem.
+    const allRepeats = repeatWords(corpus);
+    const repeats = allRepeats.slice(0, 15);
+    const more = allRepeats.length - repeats.length;
+    if (!repeats.length) {
+      return (
+        `No word has been asked twice yet — ${groupByWord(corpus).length} unique words so far, all first-time.\n\n` +
+        "Search one with: /find 단어 (Korean, Chinese or English all work)"
+      );
+    }
+    return (
+      `You've asked ${allRepeats.length} word${allRepeats.length > 1 ? "s" : ""} more than once — the ones that didn't stick:\n\n` +
+      repeats.map((e, i) => formatFound(e, weak, i)).join("\n") +
+      (more ? `\n\n…and ${more} more.` : "") +
+      "\n\nSearch any word with: /find 단어"
+    );
+  }
+
+  const hits = searchCorpus(corpus, q, { limit: 15 });
+  if (!hits.length) {
+    return `Nothing for "${q}" — you haven't asked that one yet.\n\nSend "${q} 뜻" and I'll teach it.`;
+  }
+  if (hits.length === 1) return "Found it:\n\n" + formatFound(hits[0], weak, 0, false);
+  return `${hits.length} matches for "${q}":\n\n` + hits.map((e, i) => formatFound(e, weak, i)).join("\n");
+}
+
+// Prefix a lesson with a heads-up when a word is already in your history — the passive
+// half of this feature, so repeats surface without you remembering to search.
+function repeatNotice(words, corpus) {
+  const seen = groupByWord(corpus);
+  const lines = [];
+  for (const word of words) {
+    const hit = seen.find((e) => e.word === word);
+    if (!hit) continue;
+    const nth = hit.count + 1; // this ask isn't in the corpus yet
+    const ord = `${nth}${nth === 2 ? "nd" : nth === 3 ? "rd" : "th"}`;
+    // The batch is a pseudo-session carrying no real ask date, so it's worded without one.
+    const where =
+      hit.sessions[0] === BATCH_SESSION
+        ? "it's already in your current batch"
+        : `you first asked it on ${hit.sessions[0]}`;
+    // Word first: a multi-word message can produce several of these lines.
+    lines.push(`⚠️ ${word} — ${ord} time, ${where}${hit.count > 1 ? ` (${hit.count}× already)` : ""}.`);
+  }
+  return lines.join("\n");
 }
 
 // ---------- review queue (words marked 😢 Forgot in the flashcard app) ----------
@@ -700,22 +823,32 @@ const LESSON_SYSTEM =
 async function vocabLesson({ words, sentence }) {
   const wordList = words.join(", ");
   const userText = sentence ? `Words: ${wordList}\nContext sentence: ${sentence}` : `Words: ${wordList}`;
-  const gen = await claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 6000 });
+  // Load the "asked before" corpus alongside the lesson call rather than after it: the
+  // Claude call takes 10-30s, so the 40-odd GitHub reads cost almost no extra wall-clock.
+  // A failed corpus read must never sink the lesson — it only costs us the repeat notice.
+  const [gen, corpus] = await Promise.all([
+    claude(LESSON_SYSTEM, userText, LESSON_SCHEMA, { model: LESSON_MODEL, maxTokens: 6000 }),
+    loadAskedCorpus().catch((e) => {
+      console.error("repeat check", e.message);
+      return [];
+    }),
+  ]);
   const out = JSON.parse(gen);
   if (!out.entries || !out.entries.length) throw new Error("Claude returned no lesson entries");
   // Schema can't cap array length server-side (Anthropic structured output ignores
   // minItems/maxItems) — Claude sometimes splits one input phrase into extra entries
   // (e.g. a context sentence that reads like a second word). Enforce the count in code.
   out.entries = out.entries.slice(0, words.length);
-  return finishLesson(out, words);
+  return finishLesson(out, words, corpus);
 }
 
 // Shared tail for both the typed-word lesson flow and the image lesson flow below:
 // batches each entry's row (or commits it straight away if the Gist batch isn't set up)
 // and builds each entry's Chinese-gloss picker buttons. fallbackWords (an array, matched
 // by position) only matters if an entry's own "word" field is somehow empty; the image
-// flow passes no fallbackWords since it doesn't know the word ahead of time.
-async function finishLesson(out, fallbackWords) {
+// flow passes no fallbackWords since it doesn't know the word ahead of time. corpus is the
+// "asked before" history (may be empty if that read failed) used for the repeat warning.
+async function finishLesson(out, fallbackWords, corpus = []) {
   const rows = [];
   const buttonBlocks = [];
   const hints = [];
@@ -749,10 +882,15 @@ async function finishLesson(out, fallbackWords) {
   const buttons = buttonBlocks.length ? buttonBlocks.filter((row) => row.length) : undefined;
   const hint = hints.join("");
 
+  // Repeats go above the lesson, not below it — the point is to notice before reading that
+  // you've been here before. Lessons send as Telegram HTML; this line has no markup in it.
+  const notice = repeatNotice(rows.map((r) => r.word), corpus);
+  const lesson = notice ? notice + "\n\n" + out.lesson : out.lesson;
+
   if (!process.env.GIST_ID) {
     // No batch store yet — save the words straight to today's Bot session instead
     const saved = await commitEntries(rows);
-    return { text: out.lesson + "\n\n(Batch tracking needs GIST_ID — saved directly.)\n" + saved + hint, buttons };
+    return { text: lesson + "\n\n(Batch tracking needs GIST_ID — saved directly.)\n" + saved + hint, buttons };
   }
 
   const batch = await readGistFile(BATCH_FILE);
@@ -766,9 +904,9 @@ async function finishLesson(out, fallbackWords) {
 
   if (batchRows.length >= BATCH_SIZE) {
     const saved = await flushBatch();
-    return { text: out.lesson + `\n\n🚨 Batch complete (${batchRows.length}/${BATCH_SIZE})! Auto-saving…\n` + saved + hint, buttons };
+    return { text: lesson + `\n\n🚨 Batch complete (${batchRows.length}/${BATCH_SIZE})! Auto-saving…\n` + saved + hint, buttons };
   }
-  return { text: out.lesson + `\n\n[Batch ${batchRows.length}/${BATCH_SIZE}]` + hint, buttons };
+  return { text: lesson + `\n\n[Batch ${batchRows.length}/${BATCH_SIZE}]` + hint, buttons };
 }
 
 // ---------- vocab lessons from a screenshot (e.g. a YouTube subtitle frame) ----------
@@ -804,17 +942,25 @@ const IMAGE_LESSON_SCHEMA = {
 async function vocabLessonFromImage(photos, caption) {
   const imageBlock = await fetchTelegramPhotoAsBase64(photos[photos.length - 1].file_id);
   const hintBlock = { type: "text", text: caption ? `User hint: ${caption}` : "No caption" };
-  const gen = await claude(IMAGE_LESSON_SYSTEM, [imageBlock, hintBlock], IMAGE_LESSON_SCHEMA, {
-    model: LESSON_MODEL,
-    maxTokens: 6000,
-  });
+  // Same as vocabLesson(): fetch the "asked before" history while the vision call runs,
+  // and let it fail soft — worst case the lesson just carries no repeat notice.
+  const [gen, corpus] = await Promise.all([
+    claude(IMAGE_LESSON_SYSTEM, [imageBlock, hintBlock], IMAGE_LESSON_SCHEMA, {
+      model: LESSON_MODEL,
+      maxTokens: 6000,
+    }),
+    loadAskedCorpus().catch((e) => {
+      console.error("repeat check", e.message);
+      return [];
+    }),
+  ]);
   const out = JSON.parse(gen);
   out.entries = (out.entries || []).slice(0, 1); // schema can't cap array length server-side; enforce in code
   const picked = out.entries[0];
   if (!picked || !picked.word || !picked.word.trim()) {
     return "Couldn't read a Korean subtitle in that screenshot — try a clearer or closer crop.";
   }
-  const result = await finishLesson(out);
+  const result = await finishLesson(out, null, corpus);
   const runnerUp = (out.runner_up || "").trim();
   if (!runnerUp || typeof result === "string") return result;
   return {
