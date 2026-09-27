@@ -11,7 +11,9 @@ reinforced by a Telegram bot with a daily morning review push.
 
 - **Local folder:** `Topik flash card`
 - **GitHub repo:** `sinhong96/Korean-FlashCard-Web` (branch `main`)
-- **Hosting:** Vercel (auto-deploy on every push to `main`)
+- **Hosting:** Vercel (auto-deploy on every push to `main` — it goes straight to
+  production, there is no separate "promote" step)
+- **Live app:** https://korean-flash-card-web.vercel.app/
 
 ## Architecture at a glance
 ```

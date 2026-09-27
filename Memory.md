@@ -8,11 +8,11 @@ _Last updated: 2026-09-27_
 
 ## Current status
 Project is live and actively developed. Front end + Telegram bot + daily review push all
-working and deployed on Vercel. Most recent work: the "asked before?" search — **written and
-fully tested locally, NOT yet committed or deployed.** See the top of "Recently done".
+working and deployed on Vercel. Most recent work: the "asked before?" search — shipped and
+verified live on the web app; the bot half still wants one Telegram round-trip.
 
 ## Recently done (from git, newest first)
-- **"Have I asked this before?" search (2026-09-27) — ⚠️ uncommitted, not yet deployed.**
+- **"Have I asked this before?" search (2026-09-27) — shipped (commit `3442d30`).**
   A word asked more than once is a word that didn't stick, so repeats are the weak-vocab
   signal. Three pieces, all fed by the existing CSV corpus (no new endpoint, no new data
   file, no npm packages):
@@ -119,10 +119,11 @@ fully tested locally, NOT yet committed or deployed.** See the top of "Recently 
 - (Add new items here as they come up.)
 
 ## Next entry point
-- **First thing: commit + push the search work, then verify it live** — send `/find 짜릿하다`
+- **First thing: the bot half of the search is still unverified live** — send `/find 짜릿하다`
   (expect ⚠️ 3×), bare `/find` (expect the 10-word list), and ask a repeated word like
   `재앙 뜻` to confirm the ⚠️ notice renders above the lesson and the Chinese-gloss buttons
-  still work. Everything below is unchanged.
+  still work. The web app half is already confirmed working in production.
+  Everything below is unchanged.
 - Daily review push (`api/daily.js`) was manually verified working post-`GIST_TOKEN` fix
   (`{"ok":true,"sent":0}` — empty queue, no error). Sin Hong said he doesn't expect to use
   `/weak` or `/def` going forward, so no need to proactively re-check those.
